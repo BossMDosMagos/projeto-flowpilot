@@ -4,7 +4,7 @@
    para config.local.js (chave TomTom pode mudar).
    Ao alterar o app, incremente SW_CACHE_VERSION.
    ============================================ */
-const SW_CACHE_VERSION = 'flowpilot-v1';
+const SW_CACHE_VERSION = 'flowpilot-v2';
 const APP_SHELL = [
   './',
   './index.html',

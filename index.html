@@ -164,14 +164,13 @@
         <!-- CORRIDA (trabalho de app) -->
         <section class="settings-section">
           <h4 class="settings-section-title">Corrida (trabalho de app)</h4>
-          <p class="settings-hint">Fluxo de 2 estágios: Coleta → Viagem, com aviso sonoro a 30 m do ponto. Endereços podem vir dos links de captura (botões abaixo) ou da notificação da 99 no app nativo.</p>
+          <p class="settings-hint">Fluxo 100% automático: a leitura de notificações da 99 (serviço nativo) injeta Coleta e Destino; o GPS confirma a chegada (raio de 30 m) e transita Coleta → Viagem sozinho. Intervenção só pelo widget flutuante, se necessário.</p>
           <label class="settings-switch">
             <span>Mini-HUD flutuante (velocidade + manobra + ETA)</span>
             <input type="checkbox" id="cfg-mini-hud">
             <span class="switch-track"><span class="switch-thumb"></span></span>
           </label>
-          <button id="btn-copiar-link-coleta" class="settings-btn" type="button">Copiar link de captura (Coleta)</button>
-          <button id="btn-copiar-link-destino" class="settings-btn" type="button">Copiar link de captura (Destino)</button>
+          <button id="btn-encerrar-corrida" class="settings-btn danger" type="button">Encerrar corrida atual</button>
           <p class="settings-hint">Status para a notificação fixa do app nativo:<br><span id="cfg-status-notificacao">—</span></p>
         </section>
 
@@ -243,11 +242,8 @@
       </div>
     </div>
     <div class="maintenance-strip corrida" id="corrida-strip">
-      <button class="corrida-stage" id="corrida-stage" type="button" title="Etapa atual da corrida">Livre</button>
-      <button class="corrida-action" id="corrida-coleta" type="button" title="Informar endereço de coleta">Coleta</button>
-      <button class="corrida-action" id="corrida-destino" type="button" title="Informar endereço de destino">Destino</button>
-      <button class="corrida-action embarcou" id="corrida-transicao" type="button" hidden>Embarcou</button>
-      <button class="corrida-action fim" id="corrida-finalizar" type="button" hidden>Finalizar</button>
+      <div class="corrida-stage" id="corrida-stage">Livre</div>
+      <div class="corrida-alvo" id="corrida-alvo">—</div>
     </div>
   </div>
 

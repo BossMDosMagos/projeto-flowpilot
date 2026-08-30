@@ -337,32 +337,46 @@ Viagens/odômetro mantêm as chaves próprias (`flowpilot:tripA`, `flowpilot:tri
 
 ---
 
-## 15. Corrida (trabalho de app) — 2 estágios (código seção 16)
+## 15. Corrida (trabalho de app) — 2 estágios 100% automáticos (código seção 16)
 
 Fluxo para motoristas de aplicativo: **Livre → Coleta (embarque) → Viagem (destino final)**.
 Estado persistido em `flowpilot:corrida` (`{estado, coleta, destino}`).
+**Sem captura manual**: os endereços só entram por injeção automática (serviço nativo lendo
+a notificação da 99, link de captura externo `?coleta=`/`?destino=` ou ponte JS). Na pista o
+motorista apenas olha a rota.
 
-### Controles (strip no painel inferior, sempre visível)
-- Linha extra `#corrida-strip` com: chip do **estágio** ("Livre"/"Coleta"/"Viagem",
-  colorido e com pulso ao chegar) e ações contextuais: **[Coleta]** (só Livre) →
-  **[Destino]** (anotar/reroute) + **[Embarcou]** (só Coleta) + **[Finalizar]** (só Viagem).
-- **Coleta**: `prompt` (colar endereço da 99) → geocodificação Nominatim
-  (`geocodificarEndereco`) → estado `embarque` + rota até o ponto.
-- **Destino** (no embarque): anota sem trocar a rota (a rota da coleta continua);
-  **[Embarcou]** → estado `viagem`, limpa rota e traça para o destino (ou pede o destino).
-- **Destino** (na viagem): replaneja a rota. **Finalizar**: confirma, volta a `livre`.
+### Interface (pista limpa)
+- Linha extra `#corrida-strip` no painel inferior é **somente leitura**: chip do estágio
+  ("Livre"/"Coleta"/"Viagem", colorido, com pulso ao chegar) + rótulo de destino da etapa
+  ("Coleta: Rua X" / "Destino: Rua Y" / "Aguardando destino...").
+- Único controle de corrida na interface: **"Encerrar corrida atual"** no modal de
+  Configurações (fora da pista).
+- **Mini-HUD flutuante** (velocidade + manobra + ETA, arrastável) e preview do texto da
+  notificação fixa no modal → Configurações → Corrida.
 
-### Proximidade de chegada (30 m)
-`monitorProximidadeCorrida()` (chamado em cada `atualizarPosicaoVeiculo`) compara a posição
-com o alvo da etapa; a < 30 m dispara **triplo bipe + voz** ("Você chegou ao ponto de
-coleta/destino") e põe o chip em pulso; reaproxima a > 50 m para permitir novo disparo.
+### Injeção de endereços (automática)
+- **Coleta**: `corridaSetEndereco('coleta', addr)` (serviço nativo/URL) → geocodificação
+  Nominatim → estado `embarque` + rota até o ponto. Sem toque.
+- **Destino**: `corridaSetEndereco('destino', addr, {forcarViagem, silencioso})`. No evento
+  "início de viagem" (slider da 99) o nativo manda `?viagem=1&destino=` →
+  estado `viagem` + rota ao destino final imediatamente. Se chegar ainda no embarque (situe:
+  sem forçar), apenas anota e a rota é traçada na transição automática.
+- `silencioso` suprime toasts em injeções em 2º plano (nada de popup que distraia).
 
-### Links de captura (`?coleta=&destino=`)
-- Botões "Copiar link de captura" no modal geram
-  `origin+path?coleta=<endereço>`/`?destino=<endereço>`; o boot da seção 16 lê os params
-  e aciona a mesma máquina de estados. É a ponte para o app nativo (ACTION_SEND da 99).
-- Configurações → **Corrida**: toggle do **Mini-HUD flutuante** (velocidade + manobra +
-  ETA, arrastável) e preview de `textoStatusNotificacao()`.
+### Transições automáticas (GPS)
+`monitorProximidadeCorrida()` (a cada `atualizarPosicaoVeiculo`) compara a posição com o
+alvo da etapa:
+- a **< 30 m** da coleta → triplo bipe + voz + chip em pulso; após **6 s** (sem ação
+  manual) transita sozinho para `viagem` (`corridaEmbarcou(true)`) e traça a rota do destino
+  (se o destino tiver chegado, transita na hora).
+- a **< 30 m** do destino → bipe + voz; após **15 s** encerra a corrida sozinho
+  (`corridaFinalizar(true)`).
+- ao sair a **> 50 m**, cancela timer/estado para novo disparo.
+
+### Links de captura/injeção (`?coleta=&destino=&viagem=&etapa=`)
+- Formato externo: `?coleta=<endereço>`, `?viagem=1&destino=<endereço>`, `?etapa=viagem|
+  finalizar|embarque`. O boot (`bootCorrida`) aplica na mesma máquina de estados; é a ponte
+  de injeção para o app nativo (ACTION_SEND/`acaoCaptura`).
 
 ### Ponte JS ↔ nativo
 - `window.FlowPilot.buscarStatus()` expõe `{estado, coleta, destino, kmAtual, kmFaltaOleo,
@@ -385,10 +399,12 @@ Scaffold em `native/` + `capacitor.config.json` (`appId: com.flowpilot.app`, `we
    `WAKE_LOCK`; intent-filter `ACTION_SEND text/plain`; 3 servicios).
 3. Copiar `native/android/**` → `android/app/src/main/java/com/flowpilot/app/` e os
    `res/layout|drawable` → `res/`. `MainActivity.kt` injeta `AndroidBridge` na WebView
-   e trata `?coleta=/destino=/etapa=`; `ForegroundLocationService` mantém notificação
-   fixa + GPS; `NotificationListenerService` lê as notificações da 99 e injeta endereço;
-   `OverlayService` desenha o widget por cima do app da 99 (necessita
-   `SYSTEM_ALERT_WINDOW`). Detalhes e avisos (pacotes da 99 são heurística) em
+   e trata `acaoCaptura` (coleta/destino/etapa) **sem recarregar** (JS direto na WebView,
+   fallback via URL); `ForegroundLocationService` mantém notificação
+   fixa + GPS; `NotificationListenerService` intercepta a notificação da 99, classifica
+   **Nova corrida (coleta)** vs **Início de viagem (destino)** e injeta sozinho;
+   `OverlayService` desenha o widget por cima do app da 99 com o único toque de emergência
+   (Alternar Etapa). Detalhes e avisos (pacotes da 99 são heurística) em
    `native/README.md`.
 
 ### Avisos para produção

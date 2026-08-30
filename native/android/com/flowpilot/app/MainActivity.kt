@@ -37,29 +37,67 @@ class MainActivity : BridgeActivity() {
     private fun tratarIntent(i: Intent?) {
         if (i == null) return
 
-        // ACTION_SEND de qualquer app: texto compartilhado vira endereço de coleta/destino
+        // ACTION_SEND de qualquer app: texto compartilhado vira endereço de destino
+        // (caminho manual via INTENT — o fluxo automático é o NotificationListenerService)
         if (i.action == Intent.ACTION_SEND && i.type?.startsWith("text/") == true) {
             val texto = i.getStringExtra(Intent.EXTRA_TEXT) ?: i.getStringExtra(Intent.EXTRA_SUBJECT)
             if (!texto.isNullOrBlank()) {
-                abrirComParametros("destino", limparTexto(texto))
+                abrirComQuery("destino=" + java.net.URLEncoder.encode(limparTexto(texto), "UTF-8"))
                 return
             }
         }
 
-        // acaoCaptura enviada pelos serviços (etapa= / coleta= / destino=)
+        // acaoCaptura enviada pelos serviços (ex.: "coleta=Av. X, 10" ou
+        // "viagem=1&destino=Rua Y, 20" ou "etapa=viagem")
         val cap = i.getStringExtra("acaoCaptura")
         if (!cap.isNullOrBlank()) {
-            val chave = cap.substringBefore('=')
-            val valor = cap.substringAfter('=', "")
-            abrirComParametros(chave, valor)
+            abrirComQuery(cap)
         }
     }
 
-    private fun abrirComParametros(chave: String, valor: String) {
-        val url = "${bridge?.getServerUrl().orEmpty()}/?$chave=${java.net.URLEncoder.encode(valor, "UTF-8")}"
-        bridge?.webView?.loadUrl(url)
-        // também inicia serviços para manter GPS + notificação
+    /** Injeta ?coleta/&destino/&etapa sem recarregar (JS direto) quando possível. */
+    private fun abrirComQuery(query: String) {
         FlowActions.startServices(this)
+        val wv = bridge?.webView ?: return
+        val serverUrl = bridge?.getServerUrl().orEmpty()
+
+        val js = construirInjecaoJS(query)
+        runOnUiThread {
+            try {
+                if (!js.isNullOrBlank()) {
+                    wv.evaluateJavascript(js, null)
+                } else {
+                    wv.loadUrl(serverUrl + "/?" + query)
+                }
+            } catch (t: Throwable) {
+                wv.loadUrl(serverUrl + "/?" + query)
+            }
+        }
+    }
+
+    /** Traduz a query de captura numa chamada ao window.FlowPilot do app.js (seção 16). */
+    private fun construirInjecaoJS(query: String): String? {
+        val params = LinkedHashMap<String, String>()
+        query.split('&').forEach { p ->
+            if (p.contains('=')) params[p.substringBefore('=')] =
+                java.net.URLDecoder.decode(p.substringAfter('=', ""), "UTF-8")
+        }
+
+        val coleta = params["coleta"]
+        val destino = params["destino"]
+        val viagem = params["viagem"] == "1"
+        val etapa = params["etapa"]
+
+        val esc = { s: String -> s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") }
+
+        return when {
+            coleta != null -> "FlowPilot.setEnderecoColeta(\"${esc(coleta)}\");"
+            destino != null && viagem -> "FlowPilot.setDestinoFinal(\"${esc(destino)}\");"
+            destino != null -> "FlowPilot.setEnderecoDestino(\"${esc(destino)}\");"
+            etapa == "viagem" -> "FlowPilot.embarcou();"
+            etapa == "finalizar" -> "FlowPilot.finalizar();"
+            else -> null
+        }
     }
 
     private fun limparTexto(s: String): String =

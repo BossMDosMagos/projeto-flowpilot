@@ -83,20 +83,16 @@ class OverlayService : Service() {
         atualizarCadaSegundo()
     }
 
-    /** Traduz estado: embarque -> viagem (com a rota para o destino que o web já resolve). */
+    /** Único toque de emergência no widget: alterna Coleta ↔ Viagem. */
     private fun alternarEtapa() {
         val proximo = if (FlowBridge.estado(this) == "embarque") "viagem" else "embarque"
-        FlowBridge.updateStatus(
-            this,
-            """{"estado":"$proximo","rotaAtiva":true,"kmAtual":${FlowBridge.kmAtual(this)}}"""
-        )
-        enviarParaWeb("etapa", proximo)
+        enviarParaWeb("etapa=" + proximo)
     }
 
-    private fun enviarParaWeb(tipo: String, valor: String) {
+    private fun enviarParaWeb(tipo: String) {
         val i = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra("acaoCaptura", "$tipo=$valor")
+            putExtra("acaoCaptura", tipo)
         }
         startActivity(i)
     }

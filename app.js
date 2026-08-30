@@ -119,17 +119,13 @@ const cfgArquivoImport = $('cfg-arquivo-import');
 const btnResetTripA = $('btn-reset-trip-a');
 const btnResetTripB = $('btn-reset-trip-b');
 const btnCorridaStage = $('corrida-stage');
-const btnCorridaColeta = $('corrida-coleta');
-const btnCorridaDestino = $('corrida-destino');
-const btnCorridaTransicao = $('corrida-transicao');
-const btnCorridaFinalizar = $('corrida-finalizar');
+const corridaAlvoEl = $('corrida-alvo');
 const hudMiniEl = $('hud-mini');
 const hudMiniVel = $('hud-mini-vel');
 const hudMiniManeuver = $('hud-mini-maneuver');
 const hudMiniEta = $('hud-mini-eta');
 const cfgMiniHud = $('cfg-mini-hud');
-const btnCopiarLinkColeta = $('btn-copiar-link-coleta');
-const btnCopiarLinkDestino = $('btn-copiar-link-destino');
+const btnEncerrarCorrida = $('btn-encerrar-corrida');
 const cfgStatusNotificacao = $('cfg-status-notificacao');
 
 // Cache de nós do velocímetro (classe, usada por atualizarCorVelocimetro)
@@ -1822,31 +1818,6 @@ cfgMiniHud.addEventListener('change', () => {
   aplicarSettings();
 });
 
-/* ---- Links de captura de endereço (navegador) ---- */
-function copiarLinkCaptura(tipo) {
-  const endereco = window.prompt('Endereço de ' + tipo + ' para o link de captura:');
-  if (!endereco) return;
-  const url = location.origin + location.pathname + '?' + tipo + '=' + encodeURIComponent(endereco.trim());
-  const okFinal = () => showFeedback('Link de ' + tipo + ' copiado!', 'ok');
-  const legado = () => {
-    const ta = document.createElement('textarea');
-    ta.value = url;
-    document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, 99999);
-    try { document.execCommand('copy'); okFinal(); } catch (e) {}
-    ta.remove();
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(okFinal).catch(legado);
-  } else {
-    legado();
-  }
-}
-
-btnCopiarLinkColeta.addEventListener('click', () => copiarLinkCaptura('coleta'));
-btnCopiarLinkDestino.addEventListener('click', () => copiarLinkCaptura('destino'));
-
 /* ---- Manutenção / hodômetro ---- */
 cfgKmAtual.addEventListener('change', () => {
   const v = parseFloat(cfgKmAtual.value);
@@ -2028,12 +1999,23 @@ atualizarPainelManutencao();
 
 /* ---------- 16. CORRIDA (trabalho de app) + PONTE NATIVA ---------- */
 // Fluxo de 2 estágios: Livre → Coleta (embarque) → Viagem (destino final)
+// 100% automático: endereços injetados pelo serviço nativo (notificação da 99)
+// e transição de etapa feita pelo GPS (30 m) — nenhuma captura manual.
 // Estados: 'livre' | 'embarque' | 'viagem'
 const CHAVE_CORRIDA = 'flowpilot:corrida';
 const RAIO_CHEGADA_M = 30;
+const CORRIDA_AUTO_TRANSICAO_MS = 6000;   // chegou na coleta → vira viagem sozinho
+const CORRIDA_AUTO_FINALIZAR_MS = 15000;  // chegou no destino → encerra sozinho
 const ROTULO_ESTADO = { livre: 'Livre', embarque: 'Coleta', viagem: 'Viagem' };
 let corrida = { estado: 'livre', coleta: null, destino: null };
 let proximidadeAlertas = { coleta: false, destino: false };
+let chegadaTimer = null;       // timer da transição/finalização automática
+let chegadaAguardando = null;  // 'embarque' | 'viagem' | null
+
+function limparChegadaTimer() {
+  if (chegadaTimer) { clearTimeout(chegadaTimer); chegadaTimer = null; }
+  chegadaAguardando = null;
+}
 
 function salvarCorrida() {
   try { localStorage.setItem(CHAVE_CORRIDA, JSON.stringify(corrida)); } catch (e) {}
@@ -2053,17 +2035,23 @@ function alvoCorrida() {
   return null;
 }
 
-// Pintar a linha de corrida no painel inferior
+// Pintar a linha de corrida no painel inferior (leitura, sem captura manual)
 function aplicarCorridaUI() {
   const estado = corrida.estado;
   btnCorridaStage.textContent = ROTULO_ESTADO[estado];
   btnCorridaStage.classList.toggle('embarque', estado === 'embarque');
   btnCorridaStage.classList.toggle('viagem', estado === 'viagem');
-  btnCorridaStage.classList.remove('pulso');
-  btnCorridaColeta.hidden = estado !== 'livre';
-  btnCorridaDestino.hidden = estado === 'livre';
-  btnCorridaTransicao.hidden = estado !== 'embarque';
-  btnCorridaFinalizar.hidden = estado !== 'viagem';
+  if (estado === 'livre') btnCorridaStage.classList.remove('pulso');
+  // objetivo da etapa atual (pista limpa: só informação visual)
+  const alvo = alvoCorrida();
+  let rotulo = '—';
+  if (alvo) {
+    const pre = estado === 'embarque' ? 'Coleta: ' : 'Destino: ';
+    rotulo = pre + (alvo.nome || '').split(',')[0];
+  } else if (estado === 'viagem') {
+    rotulo = 'Aguardando destino...';
+  }
+  corridaAlvoEl.textContent = rotulo;
   atualizarPreviewNotificacao();
   enviarStatusNativo();
 }
@@ -2090,54 +2078,78 @@ function corridaCriarRotaAte(ponto) {
   tracarRota();
 }
 
-// Define endereço de coleta/destino (prompt, link de captura ou nativo)
-function corridaSetEndereco(tipo, endereco) {
+// Define endereço de coleta/destino — SEMPRE VINDO DE FONTE AUTOMÁTICA
+// (serviço nativo lendo a 99, link de captura ou ponte JS). opcoes:
+//   forcarViagem: injetado pelo evento "início de viagem" (slider da 99)
+//   silencioso:    sem toasts (injeção em 2º plano não pode distrair)
+function corridaSetEndereco(tipo, endereco, opcoes) {
+  opcoes = opcoes || {};
+  const forcarViagem = !!opcoes.forcarViagem;
+  const silencioso = !!opcoes.silencioso;
   endereco = (endereco || '').trim();
   if (!endereco) {
-    showFeedback(tipo === 'coleta' ? 'Informe o endereço da coleta.' : 'Informe o endereço do destino.');
+    if (!silencioso) showFeedback(tipo === 'coleta' ? 'Informe o endereço da coleta.' : 'Informe o endereço do destino.');
     return;
   }
-  showFeedback('Localizando "' + endereco.slice(0, 40) + '"...');
+  if (!silencioso) showFeedback('Localizando "' + endereco.slice(0, 40) + '"...');
+
   geocodificarEndereco(endereco)
     .then(ponto => {
       if (!ponto) {
-        showFeedback('Endereço não encontrado. Tente ser mais específico.');
+        if (!silencioso) showFeedback('Endereço não encontrado. Tente ser mais específico.');
         return;
       }
       const estadoAnterior = corrida.estado;
       corrida[tipo] = { nome: ponto.nome, lat: ponto.lat, lon: ponto.lon };
-      if (tipo === 'coleta') corrida.estado = 'embarque';
-      else if (estadoAnterior === 'livre') corrida.estado = 'viagem';
+
+      let replanejar = false;
+      if (tipo === 'coleta') {
+        corrida.estado = 'embarque';
+        replanejar = true;                          // rota até a coleta
+      } else if (forcarViagem || estadoAnterior === 'viagem' || estadoAnterior === 'livre') {
+        corrida.estado = 'viagem';
+        replanejar = true;                          // rota até o destino final
+      }
       salvarCorrida();
 
-      const replanejar = tipo === 'coleta' ||
-        (tipo === 'destino' && corrida.estado === 'viagem');
       if (replanejar) {
         corridaCriarRotaAte(corrida[tipo]);
-      } else {
-        showFeedback('Destino anotado: ' + ponto.nome.split(',')[0], 'ok');
+      } else if (chegadaAguardando === 'embarque' && proximidadeAlertas.coleta) {
+        // já parado na coleta e o destino acabou de chegar → transita agora
+        limparChegadaTimer();
+        corridaEmbarcou(true);
+        return;
       }
       aplicarCorridaUI();
+      if (!silencioso) {
+        showFeedback(replanejar
+          ? 'Rota para ' + (tipo === 'coleta' ? 'a coleta' : 'o destino') + ' traçada.'
+          : 'Destino registrado. Rota após o embarque.', 'ok');
+      }
     })
-    .catch(() => showFeedback('Falha ao localizar o endereço.'));
+    .catch(() => { if (!silencioso) showFeedback('Falha ao localizar o endereço.'); });
 }
 
-function corridaEmbarcou() {
+// Embarque confirmado → destino final (automático no GPS ou por injeção nativa)
+function corridaEmbarcou(automatico) {
+  limparChegadaTimer();
   corrida.estado = 'viagem';
   salvarCorrida();
   novaRota();
   if (corrida.destino) {
     corridaCriarRotaAte(corrida.destino);
-    falarVoz('Embarque confirmado. Rota para o destino.');
+    falarVoz(automatico
+      ? 'Embarque automático. Rota para o destino.'
+      : 'Embarque confirmado. Rota para o destino.');
   } else {
-    showFeedback('Informe o endereço do destino para seguir.', 'ok');
-    btnCorridaDestino.focus();
+    falarVoz('Você chegou à coleta. Aguardando destino do passageiro.');
   }
   aplicarCorridaUI();
 }
 
-function corridaFinalizar() {
-  if (!window.confirm('Finalizar a corrida atual?')) return;
+function corridaFinalizar(automatico) {
+  if (!automatico && !window.confirm('Encerrar a corrida atual?')) return;
+  limparChegadaTimer();
   corrida.estado = 'livre';
   corrida.coleta = null;
   corrida.destino = null;
@@ -2146,10 +2158,20 @@ function corridaFinalizar() {
   salvarCorrida();
   novaRota();
   aplicarCorridaUI();
-  showFeedback('Corrida finalizada.', 'ok');
+  if (automatico) falarVoz('Viagem concluída. Corrida finalizada.');
+  else showFeedback('Corrida finalizada.', 'ok');
+}
+
+// Transição automática disparada pelo timer ao chegar na coleta
+function transicaoAutomatica() {
+  chegadaTimer = null;
+  chegadaAguardando = null;
+  if (corrida.estado !== 'embarque') return;
+  corridaEmbarcou(true);
 }
 
 // Aviso sonoro ao chegar a 30 m do ponto da etapa (coleta/destino)
+// + transição/finalização automática (pista limpa, sem toque)
 function monitorProximidadeCorrida(pos) {
   if (!pos || pos.lat === undefined) return;
   const alvo = alvoCorrida();
@@ -2162,14 +2184,25 @@ function monitorProximidadeCorrida(pos) {
     const ehColeta = corrida.estado === 'embarque';
     bipAlerta(); bipAlerta(); bipAlerta();
     falarVoz(ehColeta
-      ? 'Você chegou ao ponto de coleta. Confirme o embarque do passageiro.'
+      ? 'Você chegou ao ponto de coleta.'
       : 'Você chegou ao destino final. Corrida concluída.');
     btnCorridaStage.classList.add('pulso');
-    showFeedback('A até 30 m do ' + (ehColeta ? 'ponto de coleta' : 'destino') + '!', 'ok');
+    showFeedback(ehColeta
+      ? 'Coleta a até 30 m — aguardando embarque.'
+      : 'Destino a até 30 m — encerrando em instantes.', 'ok');
+
+    if (ehColeta) {
+      chegadaAguardando = 'embarque';
+      chegadaTimer = setTimeout(transicaoAutomatica, CORRIDA_AUTO_TRANSICAO_MS);
+    } else {
+      chegadaAguardando = 'viagem';
+      chegadaTimer = setTimeout(() => corridaFinalizar(true), CORRIDA_AUTO_FINALIZAR_MS);
+    }
     enviarStatusNativo();
   } else if (d > RAIO_CHEGADA_M + 20 && proximidadeAlertas[flag]) {
     proximidadeAlertas[flag] = false;
     btnCorridaStage.classList.remove('pulso');
+    limparChegadaTimer();
   }
 }
 
@@ -2260,7 +2293,7 @@ function enviarStatusNativo() {
 }
 
 window.FlowPilot = {
-  // "pequeno" módulo exposto para o app nativo (Capacitor/WebView)
+  // módulo exposto para o app nativo (Capacitor/WebView): injeção automática
   buscarStatus: function () {
     let falta = null;
     if (intervaloTrocaConfigurado()) {
@@ -2279,46 +2312,52 @@ window.FlowPilot = {
       textoNotificacao: textoStatusNotificacao()
     };
   },
-  setEnderecoColeta: function (endereco) { corridaSetEndereco('coleta', endereco); },
-  setEnderecoDestino: function (endereco) { corridaSetEndereco('destino', endereco); },
-  embarcou: function () { corridaEmbarcou(); },
-  finalizar: function () { corridaFinalizar(); },
+  // injeção silenciosa (serviço nativo / link de captura), sem toque na tela
+  setEnderecoColeta: function (endereco) { corridaSetEndereco('coleta', endereco, { silencioso: true }); },
+  setEnderecoDestino: function (endereco) { corridaSetEndereco('destino', endereco, { silencioso: true }); },
+  // evento "início de viagem" (slider da 99): troca direto para destino final
+  setDestinoFinal: function (endereco) { corridaSetEndereco('destino', endereco, { forcarViagem: true, silencioso: true }); },
+  embarcou: function () { corridaEmbarcou(true); },
+  finalizar: function () { corridaFinalizar(true); },
   proximidadeEvento: null
 };
 
-/* ---- Ligações dos controles da corrida ---- */
-btnCorridaColeta.addEventListener('click', () => {
-  const v = window.prompt('Endereço de coleta (cole o endereço da 99):');
-  if (v === null) return;
-  corridaSetEndereco('coleta', v);
-});
+/* ---- Somente o "Encerrar corrida" fica acessível (e no widget flutuante) ---- */
+if (btnEncerrarCorrida) {
+  btnEncerrarCorrida.addEventListener('click', () => corridaFinalizar(false));
+}
 
-btnCorridaDestino.addEventListener('click', () => {
-  const v = window.prompt('Endereço de destino (cole da 99):');
-  if (v === null) return;
-  corridaSetEndereco('destino', v);
-});
-
-btnCorridaTransicao.addEventListener('click', corridaEmbarcou);
-btnCorridaFinalizar.addEventListener('click', corridaFinalizar);
-
-// Dispara a cada aproximação (para o app nativo reagir / overlay)
+// Dispara o evento de aproximação para o app nativo reagir (overlay)
 setInterval(() => {
   if (window.FlowPilot.proximidadeEvento && alvoCorrida()) {
     try { window.FlowPilot.proximidadeEvento(alvoCorrida()); } catch (e) {}
   }
 }, 5000);
 
-// Boot da corrida: restaura estado + lê links de captura (?coleta=&destino=)
+// Boot da corrida: restaura estado e trata injeções externas
+// (?coleta= &?destino= &?viagem=1 &?etapa=viagem|embarque|finalizar)
 (function bootCorrida() {
   carregarCorrida();
   aplicarCorridaUI();
   initHudDrag();
   const params = new URLSearchParams(location.search);
+  const eT = params.get('etapa');
   const c = params.get('coleta');
   const d = params.get('destino');
-  if (c) corridaSetEndereco('coleta', c);
-  if (d) corridaSetEndereco('destino', d);
+  const v = params.get('viagem');
+  if (c) corridaSetEndereco('coleta', c, { silencioso: true });
+  if (d) corridaSetEndereco('destino', d, { forcarViagem: v === '1', silencioso: true });
+  if (eT === 'viagem') {
+    corridaEmbarcou(true);
+  } else if (eT === 'finalizar') {
+    corridaFinalizar(true);
+  } else if (eT === 'embarque') {
+    // toque de emergência no widget: voltar à etapa de coleta
+    corrida.estado = 'embarque';
+    salvarCorrida();
+    if (corrida.coleta) corridaCriarRotaAte(corrida.coleta);
+    aplicarCorridaUI();
+  }
 })();
 
 /* ---------- Inicialização ---------- */
