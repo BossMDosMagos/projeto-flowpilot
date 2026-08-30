@@ -47,6 +47,7 @@ const CHAVE_KM_ATUAL = 'flowpilot:kmAtualVeiculo';
 const CHAVE_INTERVALO = 'flowpilot:intervaloTrocaOleo';
 const CHAVE_KM_TROCA = 'flowpilot:kmUltimaTrocaOleo';
 const CHAVE_TRIP_A = 'flowpilot:tripA';
+const CHAVE_TRIP_B = 'flowpilot:tripB';
 const CHAVE_SETTINGS = 'flowpilot_settings';
 
 // Central de configurações (persistida em flowpilot_settings)
@@ -57,9 +58,11 @@ let settings = {
   velMaxima: 0,               // km/h (0 = desligado)
   freqVoz: 'completa',        // completa | minima
   amoled: false,              // fundos #000 puro (bateria OLED)
-  manterTelaLigada: true      // Screen Wake Lock
+  manterTelaLigada: true,     // Screen Wake Lock
+  tripAtiva: 'A'              // Trip exibida no strip (A | B)
 };
-let tripAKm = 0;              // KM da viagem diária (Trip A)
+let tripAKm = 0;              // KM da viagem Trip A
+let tripBKm = 0;              // KM da viagem Trip B
 let ultimaVelocidade = 0;     // Última velocidade exibida (p/ re-render de alerta)
 let velocidadeLimiteOk = true; // Controle do bipe: dispara na subida do limite
 let ctxAudio = null;          // Contexto WebAudio para o bipe
@@ -82,7 +85,9 @@ const cfgIntervalo = $('cfg-intervalo-oleo');
 const btnRegistrarTroca = $('btn-registrar-troca');
 const btnFecharConfig = $('btn-fechar-config');
 const kmOdometroEl = $('km-odometro');
-const kmTripAEl = $('km-trip-a');
+const tripLabelEl = $('trip-label');
+const kmTripEl = $('km-trip');
+const tripItemEl = $('trip-item');
 const oleoStatusEl = $('oleo-status');
 const oleoInfoEl = $('oleo-info');
 const custoRotaEl = $('custo-rota');
@@ -94,10 +99,12 @@ const cfgFreqVoz = $('cfg-freq-voz');
 const cfgAmoled = $('cfg-amoled');
 const cfgTelaLigada = $('cfg-tela-ligada');
 const cfgTripAValor = $('cfg-trip-a-valor');
+const cfgTripBValor = $('cfg-trip-b-valor');
 const btnExportar = $('btn-exportar');
 const btnImportar = $('btn-importar');
 const cfgArquivoImport = $('cfg-arquivo-import');
-const btnResetTrip = $('btn-reset-trip');
+const btnResetTripA = $('btn-reset-trip-a');
+const btnResetTripB = $('btn-reset-trip-b');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -1532,8 +1539,10 @@ function acumularHodometro(latitude, longitude, velocidadeKmh) {
     if (d > 0.5 && d < 200) {
       kmAtualVeiculo += d;
       tripAKm += d;
+      tripBKm += d;
       salvarKmAtual();
       salvarTripA();
+      salvarTripB();
     }
   }
   odomPosAnterior = { lat: latitude, lon: longitude };
@@ -1544,8 +1553,12 @@ function acumularHodometro(latitude, longitude, velocidadeKmh) {
 function atualizarPainelManutencao() {
   if (!kmOdometroEl || !oleoStatusEl) return;
   kmOdometroEl.textContent = fmtKm(kmAtualVeiculo);
-  if (kmTripAEl) kmTripAEl.textContent = fmtKm(tripAKm);
-  if (cfgTripAValor) cfgTripAValor.textContent = fmtKm(tripAKm);
+
+  // Trip do strip: exibe A ou B conforme tripAtiva
+  if (tripLabelEl) tripLabelEl.textContent = 'Trip ' + settings.tripAtiva;
+  if (kmTripEl) kmTripEl.textContent = fmtKm(settings.tripAtiva === 'B' ? tripBKm : tripAKm);
+  if (cfgTripAValor) cfgTripAValor.textContent = 'A: ' + fmtKm(tripAKm);
+  if (cfgTripBValor) cfgTripBValor.textContent = 'B: ' + fmtKm(tripBKm);
 
   oleoStatusEl.classList.remove('alerta-amarelo', 'alerta-vermelho');
 
@@ -1612,6 +1625,8 @@ function carregarSettings() {
     if (raw) settings = Object.assign({}, settings, JSON.parse(raw));
   } catch (e) {}
   tripAKm = numeroOu(localStorage.getItem(CHAVE_TRIP_A), 0);
+  tripBKm = numeroOu(localStorage.getItem(CHAVE_TRIP_B), 0);
+  if (settings.tripAtiva !== 'B') settings.tripAtiva = 'A';
 }
 
 function salvarSettings() {
@@ -1620,6 +1635,10 @@ function salvarSettings() {
 
 function salvarTripA() {
   try { localStorage.setItem(CHAVE_TRIP_A, String(tripAKm)); } catch (e) {}
+}
+
+function salvarTripB() {
+  try { localStorage.setItem(CHAVE_TRIP_B, String(tripBKm)); } catch (e) {}
 }
 
 // Reflete as configurações na interface (tema AMOLED, velocímetro, custo)
@@ -1640,7 +1659,8 @@ function preencherModalConfig() {
   cfgTelaLigada.checked = !!settings.manterTelaLigada;
   cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
   cfgIntervalo.value = intervaloTrocaOleo || '';
-  if (cfgTripAValor) cfgTripAValor.textContent = fmtKm(tripAKm);
+  if (cfgTripAValor) cfgTripAValor.textContent = 'A: ' + fmtKm(tripAKm);
+  if (cfgTripBValor) cfgTripBValor.textContent = 'B: ' + fmtKm(tripBKm);
 }
 
 // Abre/fecha o modal de configurações
@@ -1739,11 +1759,70 @@ btnRegistrarTroca.addEventListener('click', () => {
   showFeedback('Troca de óleo registrada!', 'ok');
 });
 
-btnResetTrip.addEventListener('click', () => {
-  tripAKm = 0;
-  salvarTripA();
+// TRIP A/B: toque alterna a viagem exibida; segurar abre opção de zerar
+function alternarTrip() {
+  settings.tripAtiva = settings.tripAtiva === 'A' ? 'B' : 'A';
+  salvarSettings();
   atualizarPainelManutencao();
-  showFeedback('Trip A zerada!', 'ok');
+}
+
+function zerarTrip(trip) {
+  if (trip === 'B') {
+    tripBKm = 0;
+    salvarTripB();
+  } else {
+    tripAKm = 0;
+    salvarTripA();
+  }
+  atualizarPainelManutencao();
+  showFeedback('Trip ' + trip + ' zerada!', 'ok');
+}
+
+function zerarTripAtiva() {
+  const t = settings.tripAtiva;
+  const kmAtual = t === 'B' ? tripBKm : tripAKm;
+  if (window.confirm('Zerar a viagem do Trip ' + t + ' (' + fmtKm(kmAtual) + ')?')) {
+    zerarTrip(t);
+  }
+}
+
+let pressTripTimer = null;
+let pressTripAtivado = false;
+
+function tripPressStart() {
+  pressTripTimer = setTimeout(() => {
+    pressTripTimer = null;
+    pressTripAtivado = true;
+    zerarTripAtiva();
+  }, 600);
+}
+
+function tripPressEnd() {
+  if (pressTripTimer) {
+    clearTimeout(pressTripTimer);
+    pressTripTimer = null;
+  }
+  if (!pressTripAtivado) alternarTrip();
+  setTimeout(() => { pressTripAtivado = false; }, 50);
+}
+
+tripItemEl.addEventListener('touchstart', tripPressStart, { passive: true });
+tripItemEl.addEventListener('touchend', tripPressEnd);
+tripItemEl.addEventListener('mousedown', tripPressStart);
+tripItemEl.addEventListener('mouseup', tripPressEnd);
+tripItemEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    alternarTrip();
+  }
+});
+
+btnResetTripA.addEventListener('click', () => {
+  if (window.confirm('Zerar o Trip A (' + fmtKm(tripAKm) + ')?')) zerarTrip('A');
+});
+
+btnResetTripB.addEventListener('click', () => {
+  if (window.confirm('Zerar o Trip B (' + fmtKm(tripBKm) + ')?')) zerarTrip('B');
 });
 
 /* ---- Backup: exportar / importar JSON ---- */
@@ -1757,7 +1836,8 @@ function dadosBackup() {
       kmAtualVeiculo,
       intervaloTrocaOleo,
       kmUltimaTrocaOleo,
-      tripAKm
+      tripAKm,
+      tripBKm
     },
     tomtomKey: obterTomtomKey() || undefined
   };
@@ -1805,6 +1885,7 @@ function aplicarImportacao(d) {
     if (isFinite(o.intervaloTrocaOleo)) intervaloTrocaOleo = Math.max(0, o.intervaloTrocaOleo);
     if (isFinite(o.kmUltimaTrocaOleo)) kmUltimaTrocaOleo = o.kmUltimaTrocaOleo;
     if (isFinite(o.tripAKm)) tripAKm = o.tripAKm;
+    if (isFinite(o.tripBKm)) tripBKm = o.tripBKm;
   }
   if (d.tomtomKey) {
     try { localStorage.setItem(CHAVE_TOMTOM, d.tomtomKey); } catch (e) {}
@@ -1814,6 +1895,7 @@ function aplicarImportacao(d) {
   salvarIntervalo();
   salvarKmTroca();
   salvarTripA();
+  salvarTripB();
   preencherModalConfig();
   aplicarSettings();
   atualizarPainelManutencao();

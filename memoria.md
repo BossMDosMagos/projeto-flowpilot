@@ -254,11 +254,12 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
   (< 0,5 m) e saltos do GPS (> 200 m). Persiste via `salvarKmAtual()`.
 
 ### UI
-- Engrenagem no topo (`#settings-btn`, na barra de busca) abre o modal `#settings-modal`
-  (animações suaves de fade/escala). A seção **Manutenção** mantém: ajuste do KM atual
-  (sincroniza com painel físico), intervalo de troca e "Registrar troca de óleo agora".
+- Engrenagem flutuante `#settings-btn` (trilha direita, acima do botão de tráfego,
+  `bottom: 450px`) abre o modal `#settings-modal` (animações suaves de fade/escala). A
+  seção **Manutenção** mantém: ajuste do KM atual (sincroniza com painel físico),
+  intervalo de troca e "Registrar troca de óleo agora".
 - `#bottom-panel` em coluna: linha 1 = velocímetro + ETA/DIST + Chegada/Custo; linha 2 =
-  **strip de manutenção** com odômetro total, status do óleo e **Trip A**, ex.:
+  **strip de manutenção** com odômetro total, status do óleo e **Trip A/B**, ex.:
   "usado 1.450 km · falta 1.550 km".
 - **Alertas do óleo:** amarelo quando faltar < 10% do intervalo; **vermelho piscando**
   quando a quilometragem do intervalo for ultrapassada (troca pendente).
@@ -271,7 +272,8 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
 ## 13. Central de configurações e personalização (seção 15)
 
 Persistência única em `localStorage` sob **`flowpilot_settings`** (objeto `settings`).
-Viagens/odômetro mantêm as chaves próprias + `flowpilot:tripA`.
+Viagens/odômetro mantêm as chaves próprias (`flowpilot:tripA`, `flowpilot:tripB`)
++ `flowpilot_settings.tripAtiva` (trip exibida no strip).
 
 ### Perfil do veículo e custos
 - **Tipo de veículo** (Moto/Carro/Bicicleta): `perfilRoteamento()` devolve o perfil OSRM
@@ -295,11 +297,12 @@ Viagens/odômetro mantêm as chaves próprias + `flowpilot:tripA`.
 
 ### Backup e dados
 - **Exportar/Importar `.json`** (`dadosBackup()`/`aplicarImportacao()`): settings +
-  odômetro (km atual, intervalo, última troca, Trip A) + chave TomTom salva no app.
-- **Reset de Trip**: `btn-reset-trip` zera `tripAKm` (Trip A acumulado junto do
-  hodômetro, exibido no strip e no modal).
+  odômetro (km atual, intervalo, última troca, Trip A e Trip B) + chave TomTom salva no app.
+- **Trip A e Trip B**: ambas acumulam junto do hodômetro. No strip, o item **Trip**
+  alterna A/B num toque; **segurar 600 ms** zera a viagem ativa (com confirmação);
+  no modal há botões "Zerar Trip A" e "Zerar Trip B".
 
 ### Interface
 - `showFeedback(msg, 'ok')` passa a usar verde (sucesso); sem tipo = vermelho (erro).
-- O botão flutuante da trilha direita para manutenção (`#maint-btn`) foi removido;
-  toda a configuração agora fica na engrenagem do topo.
+- O botão flutuante antigo de manutenção (`#maint-btn`) foi substituído por
+  `#settings-btn` (engrenagem), na trilha direita logo acima do botão de tráfego.
