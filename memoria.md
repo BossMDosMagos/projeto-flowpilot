@@ -42,7 +42,7 @@ Arquivos:
 
 ## 3. Estrutura do `app.js`
 
-Organizado em 11 blocos comentados:
+Organizado em 13 blocos comentados:
 
 1. **Estado global + constantes** — variáveis do mapa, rota, navegação e estilos.
 2. **Inicialização do mapa** — `initMap()`, controles, tema salvo, seguimento.
@@ -55,6 +55,8 @@ Organizado em 11 blocos comentados:
 9. **Destinos recentes** — persistência em `localStorage`.
 10. **Simulador de rota** — seção 6 (concluído, com acelerador 1x–8x).
 11. **Screen Wake Lock** — seção 11: mantém a tela acesa enquanto `rotaAtiva`.
+12. **Tráfego TomTom** — seção 12: overlay raster de fluxo + botão 🚦.
+13. **Recálculo anti-engarrafamento** — seção 13: monitor econômico + alerta de nova rota.
 
 ---
 
@@ -192,4 +194,44 @@ O último commit efetivo é provavelmente `ab91754` (ver `git log`).
 
 Sirva a pasta num servidor estático (ex.: `python -m http.server` ou `npx serve`) e abra no
 navegador. Para GPS real, use HTTPS (certificado local ou deploy). Para testar manobras sem
-dirigir, o simulador (quando concluído) moverá o veículo pela rota.
+dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
+
+---
+
+## 11. Tráfego em tempo real (TomTom) e recálculo anti-engarrafamento
+
+### Camada visual (código seção 12)
+- Botão flutuante `#traffic-btn` (🚦) liga/desliga um **raster overlay** dos tiles de
+  fluxo da TomTom (`/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png`), com
+  `raster-opacity: 0.55` sobre o Dark Matter/Positron e inserido **abaixo** da rota
+  (`before 'rota-halo'`).
+- A **chave de API** é resolvida em `obterTomtomKey()` nesta ordem: chave digitada na
+  primeira ativação e salva em `localStorage['flowpilot:tomtom_key']` **ou**
+  `window.TOMTOM_KEY` definido em **`config.local.js`** (arquivo local, **ignorado no
+  git** por `config.local.js` no `.gitignore` — não commitar a chave em repositório
+  público). Sem chave, a camada não carrega (feedback).
+- A camada é descartada no `setStyle` do tema e **recriada** em `recriarCamadas()`.
+- **Cache de tiles**: URLs estáveis usam o cache HTTP nativo do navegador (nenhuma
+  recarga por repetição de região).
+
+### Recálculo anti-engarrafamento (código seção 13)
+- Roda a cada atualização de posição (GPS **ou** simulador), só com `rotaAtiva`.
+- **Retenção (via rápida):** se a média dos últimos 60 s (amostras ≥ 12 km/h) indica
+  via rápida (> 45 km/h) e o veículo fica **< 12 km/h por 40 s** **dentro da rota**,
+  consulta **silenciosamente** uma alternativa (`alternatives=true` numa única chamada
+  OSRM) e escolhe a que economiza **> 2 min**.
+- **Desvio:** se o veículo se afasta **> 30 m** da polilinha original (`desvio` medido
+  perpendicular via `projetarPontoNoSegmento`), dispara recálculo de desvio.
+- **Alerta:** barra `#traffic-alert` + voz: "Nova rota mais rápida (-X min)! Tocando
+  para alternar...". Toque alterna na hora; sem toque, troca automática após 5 s
+  (`processarRota(rota)`).
+
+### Economia de cota (turno de 12 h)
+- **Trava por distância:** recálculo de desvio só > 30 m da rota.
+- **Stand-by:** parado 0 km/h por > 2 min suspende recálculo (e tráfego) até andar.
+- **Debounce:** autocomplete ajustado para **300 ms** (`DEBOUNCE_BUSCA_MS`).
+- **Cooldown:** mínimo de 90 s entre consultas de recálculo (`COOLDOWN_RECALC_MS`) +
+  guarda `recalcEmProgresso` contra chamadas concorrentes.
+
+> Observação: o "trecho de via rápida" usa heurística de velocidade média (o OSRM
+> público não expõe a classe da via); a TomTom exige HTTPS e key válida.

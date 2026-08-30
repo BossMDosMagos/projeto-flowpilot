@@ -73,6 +73,12 @@
   <!-- Acelerador: aumenta a velocidade da simulação (1x/2x/4x/8x) -->
   <button id="simul-speed-btn" type="button" title="Acelerar a simulação" aria-label="Acelerar a simulação">1x</button>
 
+  <!-- Botão flutuante: camada de tráfego em tempo real (TomTom) -->
+  <button id="traffic-btn" type="button" title="Tráfego em tempo real (TomTom)" aria-label="Ativar ou desativar tráfego">🚦</button>
+
+  <!-- Alerta de rota alternativa sugerida (anti-engarrafamento) -->
+  <div id="traffic-alert" class="traffic-alert" role="alert" aria-live="assertive"></div>
+
   <!-- Painel Inferior Flutuante (Telemetria) -->
   <div id="bottom-panel">
     <div class="speedometer">
@@ -97,6 +103,8 @@
     </div>
   </div>
 
+  <!-- Chave local TomTom (opcional; não versionada) -->
+  <script src="config.local.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

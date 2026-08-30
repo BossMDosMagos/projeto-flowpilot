@@ -23,6 +23,19 @@ let touchManipulado = false; // Se o usuário manipulou o mapa manualmente
 let watchId = null;          // ID do watchPosition (para pausar/retomar o GPS)
 let wakeLock = null;         // Screen Wake Lock ativo (tela não apaga na navegação)
 
+// Tráfego + recálculo anti-engarrafamento
+let trafficAtivo = false;    // Camada de tráfego TomTom visível
+let recalcEmProgresso = false; // Há uma consulta de rota alternativa em andamento
+let recalcCooldownAte = 0;   // Timestamp do próximo recálculo permitido
+let alertaEmAberto = false;  // Alerta de nova rota exibido
+let alertaTimer = null;      // Timer de auto-alternância (5 s)
+let alertaHandler = null;    // Handler de clique do alerta
+let ultimoTickMonitor = 0;   // Timestamp da última avaliação do monitor
+let tempoLentoAcum = 0;      // Segundos abaixo de 12 km/h (via rápida)
+let tempoParadoAcum = 0;     // Segundos parado (stand-by)
+let standbyAtivo = false;    // Veículo parado > 2 min: suspende recálculo/tráfego
+let janelaVel = [];          // Janela deslizante de velocidades {t, v}
+
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
 const inputDestino = $('destino-input');
@@ -32,6 +45,8 @@ const btnTheme = $('theme-btn');
 const btnNovaRota = $('nova-rota-btn');
 const btnSimul = $('simul-btn');
 const btnSimulSpeed = $('simul-speed-btn');
+const btnTraffic = $('traffic-btn');
+const trafficAlertEl = $('traffic-alert');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -48,6 +63,21 @@ const STYLE_CARTO_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/st
 const PITCH_NAVEGACAO = 50;   // Inclinação 3D de pilotagem (45-50°)
 const ZOOM_MOVIMENTO = 17;    // Zoom aproximado quando o veículo está em movimento
 const ZOOM_PARADO = 16;       // Zoom padrão quando parado/navegando
+
+// TomTom Traffic Flow (tiles raster) — requer chave de API (free tier)
+const TOMTOM_TRAFFIC_TILES =
+  'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key={KEY}&thickness=9&language=pt-BR&tileSize=256';
+const CHAVE_TOMTOM = 'flowpilot:tomtom_key';
+
+// Monitor anti-engarrafamento e economia de cota de requisições
+const VELOCIDADE_LENTA = 12;      // km/h — abaixo disso conta como retenção
+const TEMPO_LENTO_LIMITE_S = 40;  // segundos lento para disparar recálculo
+const VELOCIDADE_VIA_RAPIDA = 45; // média recente mín. p/ considerar via rápida
+const DESVIO_LIMITE_M = 30;       // metros de desvio da rota p/ recalcular
+const GANHO_MINIMO_S = 120;       // economia mínima (2 min) p/ sugerir nova rota
+const COOLDOWN_RECALC_MS = 90000; // intervalo mínimo entre recálculos
+const STANDBY_LIMITE_S = 120;     // parado p/ entrar em stand-by (suspende chamadas)
+const DEBOUNCE_BUSCA_MS = 300;    // debounce do autocomplete de endereços
 
 /* ---------- 1. INICIALIZAÇÃO DO MAPA ---------- */
 function initMap() {
@@ -153,6 +183,11 @@ function recriarCamadas() {
   // Re-traça a rota ativa, se houver
   if (rotaAtiva && currentRouteCoords) {
     desenharRota(currentRouteCoords);
+  }
+  // Recria a camada de tráfego se estava ativa (o estilo novo a remove)
+  if (trafficAtivo) {
+    const key = obterTomtomKey();
+    if (key) ativarTraffic(key, true);
   }
 }
 
@@ -277,6 +312,9 @@ function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
   // Telemetria em tempo real: ETA, distância restante e hora de chegada
   atualizarTelemetria(window.currentCoords);
 
+  // Monitor anti-engarrafamento + recálculo econômico (roteamento ativo)
+  monitorarEngarrafamento(velocidadeKmh, window.currentCoords);
+
   // Segue o veículo (com pitch/bearing no modo rota)
   if (followMode) {
     acompanharVeiculo(pos, velocidadeKmh, heading);
@@ -331,7 +369,7 @@ inputDestino.addEventListener('input', () => {
     return;
   }
 
-  debounceTimer = setTimeout(() => buscarEndereco(query), 400);
+  debounceTimer = setTimeout(() => buscarEndereco(query), DEBOUNCE_BUSCA_MS);
 });
 
 function buscarEndereco(query) {
@@ -411,41 +449,44 @@ function tracarRota() {
       if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
         throw new Error('Não foi possível calcular a rota.');
       }
-
-      const route = data.routes[0];
-      desenharRota(route.geometry.coordinates);
-
-      // Guarda os passos para navegação
-      if (route.legs && route.legs[0] && route.legs[0].steps) {
-        currentSteps = route.legs[0].steps;
-        currentStepIndex = 0;
-        enunciadoPerto.clear();
-        exibirInstrucao(0);
-        falarVoz(instrucaoTexto(currentSteps[0]));
-      } else {
-        currentSteps = [];
-        ocultarInstrucao();
-      }
-
-      const minutos = Math.max(1, Math.round(route.duration / 60));
-      const km = (route.distance / 1000).toFixed(1);
-
-      currentRouteDistance = route.distance;
-      currentRouteDuration = route.duration;
-      registrarDestinoRecente(destinoSelecionado);
-
-      etaTimeEl.textContent = formatarETA(minutos);
-      distKmEl.textContent = `${km} km`;
-
-      // Ativa o modo rota (perspectiva 3D + rotação)
-      ativarRota();
-      destacarRota();
-      atualizarTelemetria(window.currentCoords);
+      processarRota(data.routes[0]);
     })
     .catch(err => {
       console.error('Erro no OSRM:', err);
       showFeedback('Não foi possível calcular a rota. Tente novamente.');
     });
+}
+
+// Renderiza uma rota já calculada (usada pela rota original e pelo recálculo)
+function processarRota(route) {
+  desenharRota(route.geometry.coordinates);
+
+  // Guarda os passos para navegação
+  if (route.legs && route.legs[0] && route.legs[0].steps) {
+    currentSteps = route.legs[0].steps;
+    currentStepIndex = 0;
+    enunciadoPerto.clear();
+    exibirInstrucao(0);
+    falarVoz(instrucaoTexto(currentSteps[0]));
+  } else {
+    currentSteps = [];
+    ocultarInstrucao();
+  }
+
+  const minutos = Math.max(1, Math.round(route.duration / 60));
+  const km = (route.distance / 1000).toFixed(1);
+
+  currentRouteDistance = route.distance;
+  currentRouteDuration = route.duration;
+  registrarDestinoRecente(destinoSelecionado);
+
+  etaTimeEl.textContent = formatarETA(minutos);
+  distKmEl.textContent = `${km} km`;
+
+  // Ativa o modo rota (perspectiva 3D + rotação)
+  ativarRota();
+  destacarRota();
+  atualizarTelemetria(window.currentCoords);
 }
 
 // Desenha a rota como camada GeoJSON (halo + linha principal)
@@ -866,6 +907,16 @@ function novaRota() {
   currentRouteDistance = 0;
   currentRouteDuration = 0;
 
+  // Reset do monitor anti-engarrafamento
+  fecharAlerta();
+  recalcEmProgresso = false;
+  recalcCooldownAte = 0;
+  ultimoTickMonitor = 0;
+  tempoLentoAcum = 0;
+  tempoParadoAcum = 0;
+  standbyAtivo = false;
+  janelaVel = [];
+
   etaTimeEl.textContent = '--:--';
   distKmEl.textContent = '0.0 km';
   chegadaHoraEl.textContent = '--:--';
@@ -1136,6 +1187,226 @@ document.addEventListener('visibilitychange', () => {
     solicitarWakeLock();
   }
 });
+
+/* ---------- 12. CAMADA DE TRÁFEGO EM TEMPO REAL (TomTom) ---------- */
+function obterTomtomKey() {
+  // Prioridade: chave digitada na UI (localStorage) > config.local.js (não versionado)
+  try {
+    const salva = localStorage.getItem(CHAVE_TOMTOM);
+    if (salva) return salva;
+  } catch (e) {}
+  if (window.TOMTOM_KEY) return window.TOMTOM_KEY;
+  return '';
+}
+
+// Botão 🚦: liga/desliga a camada visual de tráfego
+function toggleTraffic() {
+  if (trafficAtivo) {
+    desativarTraffic();
+    return;
+  }
+  let key = obterTomtomKey();
+  if (!key) {
+    key = prompt('Informe a chave de API TomTom (Traffic Flow, free tier). Ela será salva somente neste dispositivo:');
+    if (!key) { showFeedback('Ativação de tráfego cancelada.'); return; }
+    key = key.trim();
+    if (!key) return;
+    try { localStorage.setItem(CHAVE_TOMTOM, key); } catch (e) {}
+  }
+  ativarTraffic(key);
+}
+
+// Adiciona os raster tiles de fluxo de tráfego sobre o basemap (abaixo da rota)
+function ativarTraffic(key, silencioso = false) {
+  if (!map) return;
+  try { map.removeLayer('tomtom-traffic-layer'); } catch (e) {}
+  try { map.removeSource('tomtom-traffic'); } catch (e) {}
+
+  map.addSource('tomtom-traffic', {
+    type: 'raster',
+    tiles: [TOMTOM_TRAFFIC_TILES.replace('{KEY}', encodeURIComponent(key))],
+    tileSize: 256,
+    minzoom: 0,
+    maxzoom: 21,
+    scheme: 'xyz',
+    attribution: 'TomTom'
+  });
+
+  // Insere abaixo da rota para não cobrir a linha azul
+  const antesDe = sourceRota ? 'rota-halo' : undefined;
+  map.addLayer({
+    id: 'tomtom-traffic-layer',
+    type: 'raster',
+    source: 'tomtom-traffic',
+    layout: { visibility: 'visible' },
+    paint: {
+      'raster-opacity': 0.55,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear'
+    }
+  }, antesDe);
+
+  trafficAtivo = true;
+  btnTraffic.classList.add('ativo');
+  if (!silencioso) showFeedback('Tráfego em tempo real (TomTom) ativado.');
+}
+
+function desativarTraffic() {
+  try { map.removeLayer('tomtom-traffic-layer'); } catch (e) {}
+  try { map.removeSource('tomtom-traffic'); } catch (e) {}
+  trafficAtivo = false;
+  btnTraffic.classList.remove('ativo');
+  showFeedback('Tráfego desativado.');
+}
+
+btnTraffic.addEventListener('click', toggleTraffic);
+
+/* ---------- 13. RECÁLCULO ANTI-ENGARRAMENTO (com economia de cota) ---------- */
+// Chamado a cada atualização de posição (GPS ou simulador) durante a rota
+function monitorarEngarrafamento(vel, pos) {
+  if (!rotaAtiva || !destinoSelecionado || !map) return;
+  const agora = Date.now();
+  const dt = ultimoTickMonitor ? Math.min((agora - ultimoTickMonitor) / 1000, 2) : 0;
+  if (dt <= 0) { ultimoTickMonitor = agora; return; }
+  ultimoTickMonitor = agora;
+
+  // Filtro de stand-by: parado > 2 min suspende recálculo e uso de tráfego
+  if (vel < 1) {
+    tempoParadoAcum += dt;
+    tempoLentoAcum = 0;
+    if (tempoParadoAcum >= STANDBY_LIMITE_S) standbyAtivo = true;
+  } else {
+    tempoParadoAcum = 0;
+    if (standbyAtivo && vel >= 5) standbyAtivo = false;
+    if (standbyAtivo) { tempoLentoAcum = 0; return; }
+  }
+  if (standbyAtivo) return;
+
+  // Janela deslizante de velocidades (1 min) para reconhecer via rápida
+  janelaVel.push({ t: agora, v: vel });
+  const JANELA_MS = 60000;
+  while (janelaVel.length && agora - janelaVel[0].t > JANELA_MS) janelaVel.shift();
+
+  if (recalcEmProgresso || agora < recalcCooldownAte) {
+    if (vel >= VELOCIDADE_LENTA) tempoLentoAcum = 0;
+    return;
+  }
+
+  const desvio = distanciaDoVeiculoARota(pos.lat, pos.lon);
+
+  // Trava por distância: recálculo de desvio só acima de 30 m da rota
+  if (desvio > DESVIO_LIMITE_M) {
+    recalcCooldownAte = agora + COOLDOWN_RECALC_MS;
+    consultarRotaAlternativa();
+    return;
+  }
+
+  // Anti-engarrafamento: < 12 km/h por 40 s em trecho de via rápida (na rota)
+  if (vel < VELOCIDADE_LENTA) {
+    if (velocidadeReferencia() >= VELOCIDADE_VIA_RAPIDA) {
+      tempoLentoAcum += dt;
+      if (tempoLentoAcum >= TEMPO_LENTO_LIMITE_S) {
+        tempoLentoAcum = 0;
+        recalcCooldownAte = agora + COOLDOWN_RECALC_MS;
+        consultarRotaAlternativa();
+      }
+    } else {
+      tempoLentoAcum = 0;
+    }
+  } else {
+    tempoLentoAcum = 0;
+  }
+}
+
+// Média dos últimos 60 s considerando apenas amostras em movimento (≥ 12 km/h)
+function velocidadeReferencia() {
+  const ms = janelaVel.filter((e) => e.v >= VELOCIDADE_LENTA);
+  if (!ms.length) return 0;
+  return ms.reduce((s, e) => s + e.v, 0) / ms.length;
+}
+
+// Distância perpendicular do veículo à polilinha da rota (metros)
+function distanciaDoVeiculoARota(lat, lon) {
+  const coords = currentRouteCoords;
+  if (!coords || coords.length < 2) return Infinity;
+  let min = Infinity;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const d = projetarPontoNoSegmento(lat, lon, coords[i], coords[i + 1]).dist;
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+// Duração restante estimada da rota atual
+function duracaoRestanteAtual() {
+  const pos = window.currentCoords;
+  if (!pos || !currentRouteDistance || !currentRouteCoords) return currentRouteDuration;
+  const frac = Math.min(1, distRestanteRota(pos.lat, pos.lon) / currentRouteDistance);
+  return Math.max(0, currentRouteDuration * frac);
+}
+
+// Consulta silenciosa de rota alternativa (alternatives=true numa única chamada)
+function consultarRotaAlternativa() {
+  const origem = window.currentCoords;
+  const dest = destinoSelecionado;
+  if (!origem || !dest) return;
+
+  recalcEmProgresso = true;
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/` +
+    `${origem.lon},${origem.lat};${dest.lon},${dest.lat}` +
+    `?overview=full&geometries=geojson&steps=true&alternatives=true`;
+
+  fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then((data) => {
+      if (data.code !== 'Ok' || !data.routes || data.routes.length < 2) return;
+      const atual = duracaoRestanteAtual();
+      // Escolhe a alternativa que economiza mais de 2 minutos
+      let melhor = null;
+      for (let i = 1; i < data.routes.length; i++) {
+        const r = data.routes[i];
+        if (r.duration < atual - GANHO_MINIMO_S) {
+          if (!melhor || r.duration < melhor.duration) melhor = r;
+        }
+      }
+      if (melhor) exibirAlertaNovaRota(atual - melhor.duration, melhor);
+    })
+    .catch((err) => console.error('Erro no recálculo OSRM:', err))
+    .finally(() => { recalcEmProgresso = false; });
+}
+
+// Alerta visual + sonoro com troca automática após 5 s (ou toque para alternar)
+function exibirAlertaNovaRota(economizado, rota) {
+  if (alertaEmAberto || !trafficAlertEl) return;
+  alertaEmAberto = true;
+
+  const min = Math.max(1, Math.round(economizado / 60));
+  const msg = `Nova rota mais rápida (-${min} min)! Tocando para alternar...`;
+  trafficAlertEl.textContent = msg;
+  trafficAlertEl.classList.add('visivel');
+  falarVoz(msg);
+
+  alertaHandler = () => {
+    fecharAlerta();
+    processarRota(rota);
+  };
+  trafficAlertEl.addEventListener('click', alertaHandler);
+  alertaTimer = setTimeout(alertaHandler, 5000);
+}
+
+function fecharAlerta() {
+  alertaEmAberto = false;
+  if (alertaTimer) { clearTimeout(alertaTimer); alertaTimer = null; }
+  if (alertaHandler) {
+    trafficAlertEl.removeEventListener('click', alertaHandler);
+    alertaHandler = null;
+  }
+  trafficAlertEl.classList.remove('visivel');
+}
 
 /* ---------- Inicialização ---------- */
 document.addEventListener('DOMContentLoaded', initMap);
