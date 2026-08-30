@@ -36,6 +36,15 @@ let tempoParadoAcum = 0;     // Segundos parado (stand-by)
 let standbyAtivo = false;    // Veículo parado > 2 min: suspende recálculo/tráfego
 let janelaVel = [];          // Janela deslizante de velocidades {t, v}
 
+// Hodômetro cumulativo + manutenção
+let kmAtualVeiculo = 0;      // KM total do veículo (meters)
+let intervaloTrocaOleo = 0;  // Intervalo de troca de óleo (km)
+let kmUltimaTrocaOleo = 0;   // KM registrado na última troca de óleo
+let odomPosAnterior = null;  // Última posição GPS p/ cálculo de deslocamento
+const CHAVE_KM_ATUAL = 'flowpilot:kmAtualVeiculo';
+const CHAVE_INTERVALO = 'flowpilot:intervaloTrocaOleo';
+const CHAVE_KM_TROCA = 'flowpilot:kmUltimaTrocaOleo';
+
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
 const inputDestino = $('destino-input');
@@ -47,6 +56,15 @@ const btnSimul = $('simul-btn');
 const btnSimulSpeed = $('simul-speed-btn');
 const btnTraffic = $('traffic-btn');
 const trafficAlertEl = $('traffic-alert');
+const btnMaint = $('maint-btn');
+const maintModalEl = $('maint-modal');
+const cfgKmAtual = $('cfg-km-atual');
+const cfgIntervalo = $('cfg-intervalo-oleo');
+const btnRegistrarTroca = $('btn-registrar-troca');
+const btnFecharConfig = $('btn-fechar-config');
+const kmOdometroEl = $('km-odometro');
+const oleoStatusEl = $('oleo-status');
+const oleoInfoEl = $('oleo-info');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -315,6 +333,9 @@ function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
 
   // Monitor anti-engarrafamento + recálculo econômico (roteamento ativo)
   monitorarEngarrafamento(velocidadeKmh, window.currentCoords);
+
+  // Hodômetro cumulativo (deslocamento real, sem simulação)
+  acumularHodometro(latitude, longitude, velocidadeKmh);
 
   // Segue o veículo (com pitch/bearing no modo rota)
   if (followMode) {
@@ -1408,6 +1429,127 @@ function fecharAlerta() {
   }
   trafficAlertEl.classList.remove('visivel');
 }
+
+/* ---------- 14. HODÔMETRO CUMULATIVO + MANUTENÇÃO ---------- */
+const fmtKm = (n) => Math.round(n).toLocaleString('pt-BR') + ' km';
+
+function numeroOu(v, def) {
+  const n = parseFloat(v);
+  return isFinite(n) ? n : def;
+}
+
+function carregarHodometro() {
+  try {
+    kmAtualVeiculo = numeroOu(localStorage.getItem(CHAVE_KM_ATUAL), 0);
+    intervaloTrocaOleo = Math.max(0, numeroOu(localStorage.getItem(CHAVE_INTERVALO), 0));
+    const t = parseFloat(localStorage.getItem(CHAVE_KM_TROCA));
+    kmUltimaTrocaOleo = isFinite(t) ? t : kmAtualVeiculo;
+  } catch (e) {}
+}
+
+function salvarKmAtual() {
+  try { localStorage.setItem(CHAVE_KM_ATUAL, String(kmAtualVeiculo)); } catch (e) {}
+}
+
+function salvarIntervalo() {
+  try { localStorage.setItem(CHAVE_INTERVALO, String(intervaloTrocaOleo)); } catch (e) {}
+}
+
+function salvarKmTroca() {
+  try { localStorage.setItem(CHAVE_KM_TROCA, String(kmUltimaTrocaOleo)); } catch (e) {}
+}
+
+// Acumula deslocamento real (km) no hodômetro. Exclui o simulador e ignora
+// ruído (< 0,5 m) e saltos absurdos do GPS (> 200 m entre atualizações).
+function acumularHodometro(latitude, longitude, velocidadeKmh) {
+  if (simulAtivo) {
+    odomPosAnterior = { lat: latitude, lon: longitude };
+  } else if (velocidadeKmh > 2 && odomPosAnterior) {
+    const d = haversine(odomPosAnterior.lat, odomPosAnterior.lon, latitude, longitude);
+    if (d > 0.5 && d < 200) {
+      kmAtualVeiculo += d;
+      salvarKmAtual();
+    }
+  }
+  odomPosAnterior = { lat: latitude, lon: longitude };
+  atualizarPainelManutencao();
+}
+
+// Atualiza o strip: odômetro total + status do óleo (amarelo < 10% / vermelho)
+function atualizarPainelManutencao() {
+  if (!kmOdometroEl || !oleoStatusEl) return;
+  kmOdometroEl.textContent = fmtKm(kmAtualVeiculo);
+
+  oleoStatusEl.classList.remove('alerta-amarelo', 'alerta-vermelho');
+
+  if (!intervaloTrocaOleo) {
+    oleoInfoEl.textContent = 'intervalo não configurado';
+    return;
+  }
+
+  const desdeTroca = kmAtualVeiculo - kmUltimaTrocaOleo;
+  const faltaRestante = intervaloTrocaOleo - desdeTroca;
+  const pct = desdeTroca / intervaloTrocaOleo;
+  const base = `usado ${fmtKm(desdeTroca)} · falta ${fmtKm(Math.max(0, faltaRestante))}`;
+
+  if (pct >= 1) {
+    oleoInfoEl.textContent = `usado ${fmtKm(desdeTroca)} · TROQUE O ÓLEO!`;
+    oleoStatusEl.classList.add('alerta-vermelho');
+  } else if (pct >= 0.9) {
+    oleoInfoEl.textContent = base;
+    oleoStatusEl.classList.add('alerta-amarelo');
+  } else {
+    oleoInfoEl.textContent = base;
+  }
+}
+
+/* ---- Painel de manutenção (modal de calibragem) ---- */
+btnMaint.addEventListener('click', () => {
+  cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
+  cfgIntervalo.value = intervaloTrocaOleo || '';
+  maintModalEl.classList.add('visivel');
+});
+
+btnFecharConfig.addEventListener('click', () => maintModalEl.classList.remove('visivel'));
+
+maintModalEl.addEventListener('click', (e) => {
+  if (e.target === maintModalEl) maintModalEl.classList.remove('visivel');
+});
+
+cfgKmAtual.addEventListener('change', () => {
+  const v = parseFloat(cfgKmAtual.value);
+  if (isFinite(v) && v >= 0) {
+    kmAtualVeiculo = v;
+    salvarKmAtual();
+    atualizarPainelManutencao();
+    showFeedback('KM atual do veículo ajustado.');
+  } else if (cfgKmAtual.value !== '') {
+    showFeedback('Valor inválido para o KM atual.');
+  }
+});
+
+cfgIntervalo.addEventListener('change', () => {
+  const v = parseFloat(cfgIntervalo.value);
+  if (isFinite(v) && v >= 0) {
+    intervaloTrocaOleo = v;
+    salvarIntervalo();
+    atualizarPainelManutencao();
+  } else if (cfgIntervalo.value !== '') {
+    showFeedback('Valor inválido para o intervalo.');
+  }
+});
+
+btnRegistrarTroca.addEventListener('click', () => {
+  kmUltimaTrocaOleo = kmAtualVeiculo;
+  salvarKmTroca();
+  atualizarPainelManutencao();
+  maintModalEl.classList.remove('visivel');
+  showFeedback('Troca de óleo registrada!');
+});
+
+// Carrega as variáveis persistentes e pinta o painel de manutenção no boot
+carregarHodometro();
+atualizarPainelManutencao();
 
 /* ---------- Inicialização ---------- */
 document.addEventListener('DOMContentLoaded', initMap);

@@ -164,7 +164,7 @@ html, body {
 #locate-btn {
   position: fixed;
   right: 16px;
-  bottom: 150px;
+  bottom: 210px;
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -213,7 +213,7 @@ html, body {
 #theme-btn {
   position: fixed;
   right: 16px;
-  bottom: 210px;
+  bottom: 270px;
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -249,7 +249,7 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #simul-btn {
   position: fixed;
   right: 16px;
-  bottom: 270px;
+  bottom: 330px;
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -280,7 +280,7 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #simul-speed-btn {
   position: fixed;
   right: 72px;
-  bottom: 270px;
+  bottom: 330px;
   z-index: 1000;
   min-width: 50px;
   height: 50px;
@@ -316,7 +316,7 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #traffic-btn {
   position: fixed;
   right: 16px;
-  bottom: 330px;
+  bottom: 390px;
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -340,6 +340,119 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #traffic-btn.ativo {
   background: var(--accent);
   animation: pulse 1.6s infinite;
+}
+
+/* ============================================
+   BOTÃO FLUTUANTE - MANUTENÇÃO / ODÔMETRO
+   ============================================ */
+#maint-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 450px;
+  z-index: 1000;
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: transform 0.15s;
+}
+
+#maint-btn:active {
+  transform: scale(0.92);
+}
+
+/* ============================================
+   MODAL DE MANUTENÇÃO
+   ============================================ */
+.maint-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.maint-modal.visivel {
+  display: flex;
+}
+
+.maint-modal-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maint-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.maint-field-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+.maint-input {
+  height: 46px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 600;
+  outline: none;
+}
+
+.maint-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 2px 0 6px;
+}
+
+.maint-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #e5e7eb;
+  color: #0f172a;
+  transition: opacity 0.2s;
+}
+
+.maint-btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.maint-btn:hover {
+  opacity: 0.9;
 }
 
 /* Alerta de nova rota mais rápida (anti-engarrafamento) */
@@ -523,9 +636,17 @@ body:not(.rota-ativa) #nav-instruction {
   box-shadow: var(--shadow);
   padding: 16px 20px;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  backdrop-filter: blur(6px);
+}
+
+.panel-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  backdrop-filter: blur(6px);
+  gap: 16px;
+  width: 100%;
 }
 
 /* Velocímetro - fundo escuro, texto verde brillante (painel de bordo) */
@@ -603,6 +724,59 @@ body:not(.rota-ativa) #nav-instruction {
 .stat-chegada .stat-value {
   font-size: 22px;
   color: var(--accent);
+}
+
+/* Strip de manutenção (odômetro + óleo) */
+.maintenance-strip {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding-top: 8px;
+}
+
+.maintenance-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.maintenance-item.oleo {
+  flex: 1;
+}
+
+.maint-label {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.maint-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Alerta do óleo: amarelo < 10% restante; vermelho piscando se ultrapassado */
+#oleo-status.alerta-amarelo .maint-value {
+  color: #f59e0b;
+}
+
+#oleo-status.alerta-vermelho .maint-value {
+  color: #ef4444;
+  animation: pisca 1s step-start infinite;
+}
+
+@keyframes pisca {
+  50% { opacity: 0.25; }
 }
 
 /* ============================================

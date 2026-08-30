@@ -42,7 +42,7 @@ Arquivos:
 
 ## 3. Estrutura do `app.js`
 
-Organizado em 13 blocos comentados:
+Organizado em 14 blocos comentados:
 
 1. **Estado global + constantes** — variáveis do mapa, rota, navegação e estilos.
 2. **Inicialização do mapa** — `initMap()`, controles, tema salvo, seguimento.
@@ -57,6 +57,7 @@ Organizado em 13 blocos comentados:
 11. **Screen Wake Lock** — seção 11: mantém a tela acesa enquanto `rotaAtiva`.
 12. **Tráfego TomTom** — seção 12: overlay raster de fluxo + botão 🚦.
 13. **Recálculo anti-engarrafamento** — seção 13: monitor econômico + alerta de nova rota.
+14. **Hodômetro + manutenção** — seção 14: KM cumulativo + status do óleo + modal.
 
 ---
 
@@ -236,3 +237,30 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
 
 > Observação: o "trecho de via rápida" usa heurística de velocidade média (o OSRM
 > público não expõe a classe da via); a TomTom exige HTTPS e key válida.
+
+---
+
+## 12. Hodômetro cumulativo e controle de troca de óleo
+
+### Persistência (localStorage)
+- `flowpilot:kmAtualVeiculo` — KM total do veículo (em metros, acumulado em `kmAtualVeiculo`).
+- `flowpilot:intervaloTrocaOleo` — intervalo de troca em km (0 = alertas desligados).
+- `flowpilot:kmUltimaTrocaOleo` — KM registrado na última troca.
+
+### Acumulação
+- `acumularHodometro()` roda a cada `atualizarPosicaoVeiculo()`: somar `haversine()`
+  entre posições quando `speed > 2 km/h`. Ignora simulador (`simulAtivo`), ruído
+  (< 0,5 m) e saltos do GPS (> 200 m). Persiste via `salvarKmAtual()`.
+
+### UI
+- Botão engrenagem `#maint-btn` (trilha direita, `bottom: 390px`) abre o modal
+  `#maint-modal` com: ajuste do KM atual (sincroniza com painel físico), intervalo de
+  troca e "Registrar troca de óleo agora".
+- `#bottom-panel` virou coluna: linha 1 = velocímetro + ETA/DIST/CHEGADA; linha 2 =
+  **strip de manutenção** com odômetro total e status do óleo, ex.:
+  "usado 1.450 km · falta 1.550 km".
+- **Alertas do óleo:** amarelo quando faltar < 10% do intervalo; **vermelho piscando**
+  quando a quilometragem do intervalo for ultrapassada (troca pendente).
+
+> O hodômetro acumula apenas no GPS real (o simulador não incrementa), exigindo
+> permissão de geolocalização e deslocamento real.
