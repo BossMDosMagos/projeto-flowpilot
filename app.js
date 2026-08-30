@@ -54,10 +54,6 @@ function initMap() {
     maxZoom: 20,
     attributionControl: false
   });
-
-  // Navegação sem bússola (visão limpa, estilo Waze)
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-
   // Criar o marcador do veículo quando o estilo carregar
   map.on('load', () => {
     vehicleMarker = createVehicleMarker(defaultCoords);
