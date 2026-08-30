@@ -124,14 +124,27 @@ class MainActivity : BridgeActivity() {
             stopService(Intent(this@MainActivity, OverlayService::class.java))
         }
 
+        /**
+         * Leitura do acumulador NATIVO (odômetro + Trip + óleo). É a fonte de verdade para
+         * o odômetro quando o serviço de GPS está ativo; o web apenas espelha na interface.
+         */
+        @JavascriptInterface
+        fun getStatus(): String = FlowBridge.getStatusJSON(this@MainActivity)
+
+        /** Zera a Trip A/B no acumulador nativo (quando o motorista zera no web). */
+        @JavascriptInterface
+        fun resetTrip(trip: String) {
+            FlowBridge.zerarTrip(this@MainActivity, trip)
+        }
+
         /** Consulta de status agregada (para widgets/notificação do sistema). */
         @JavascriptInterface
         fun status(): String {
             val o = JSONObject()
             o.put("estado", FlowBridge.estado(this@MainActivity))
-            o.put("textoNotificacao", FlowBridge.textoNotificacao(this@MainActivity))
+            o.put("textoNotificacao", FlowBridge.comporNotificacao(this@MainActivity))
             o.put("rotaAtiva", FlowBridge.rotaAtiva(this@MainActivity))
-            o.put("kmAtual", FlowBridge.kmAtual(this@MainActivity).toDouble())
+            o.put("kmAtual", FlowBridge.totalKm(this@MainActivity).toDouble())
             return o.toString()
         }
     }

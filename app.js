@@ -43,6 +43,8 @@ let kmAtualVeiculo = 0;      // KM total do veículo (meters)
 let intervaloTrocaOleo = 0;  // Intervalo de troca de óleo (km)
 let kmUltimaTrocaOleo = 0;   // KM registrado na última troca de óleo
 let odomPosAnterior = null;  // Última posição GPS p/ cálculo de deslocamento
+let nativoAtivo = false;     // WebView nativa: o serviço de GPS conta os km (fonte de verdade)
+let recalFila = false;       // recalibração do odômetro: avisa o nativo uma única vez
 const CHAVE_KM_ATUAL = 'flowpilot:kmAtualVeiculo';
 const CHAVE_INTERVALO = 'flowpilot:intervaloTrocaOleo';
 const CHAVE_KM_TROCA = 'flowpilot:kmUltimaTrocaOleo';
@@ -1564,11 +1566,36 @@ function numeroOu(v, def) {
 }
 
 function carregarHodometro() {
+  nativoAtivo = !!(window.AndroidBridge && typeof window.AndroidBridge.getStatus === 'function');
+  if (nativoAtivo) {
+    // fonte de verdade é o serviço nativo: adota os valores dele (odômetro, trips, óleo)
+    sincronizarOdometroNativo(true);
+    return;
+  }
   try {
     kmAtualVeiculo = numeroOu(localStorage.getItem(CHAVE_KM_ATUAL), 0);
     intervaloTrocaOleo = Math.max(0, numeroOu(localStorage.getItem(CHAVE_INTERVALO), 0));
     const t = parseFloat(localStorage.getItem(CHAVE_KM_TROCA));
     kmUltimaTrocaOleo = isFinite(t) ? t : kmAtualVeiculo;
+  } catch (e) {}
+}
+
+// Lê o acumulador nativo (odômetro + Trip A/B + óleo) e espelha na interface.
+// Roda no carregamento e a cada 5 s — sem isso o web mostraria números velhos.
+function sincronizarOdometroNativo(primeira) {
+  if (!nativoAtivo) return;
+  try {
+    const s = JSON.parse(window.AndroidBridge.getStatus());
+    if (!s) return;
+    if (isFinite(s.odometroTotal)) kmAtualVeiculo = s.odometroTotal;
+    if (isFinite(s.tripA)) tripAKm = s.tripA;
+    if (isFinite(s.tripB)) tripBKm = s.tripB;
+    if (isFinite(s.kmTrocaBase)) kmUltimaTrocaOleo = s.kmTrocaBase;
+    if (isFinite(s.intervaloTroca)) intervaloTrocaOleo = Math.max(0, s.intervaloTroca);
+    if (cfgKmAtual && isFinite(s.odometroTotal) && s.odometroTotal > 0) {
+      cfgKmAtual.value = Math.round(s.odometroTotal) || '';
+    }
+    if (primeira || s.odometroTotal >= 0) atualizarPainelManutencao();
   } catch (e) {}
 }
 
@@ -1586,10 +1613,12 @@ function salvarKmTroca() {
 
 // Acumula deslocamento real (km) no hodômetro. Exclui o simulador e ignora
 // ruído (< 0,5 m) e saltos absurdos do GPS (> 200 m entre atualizações).
+// Quando o serviço nativo está ativo (WebView do app), QUEM conta é ele —
+// aqui apenas espelhamos (evita contar o mesmo km duas vezes).
 function acumularHodometro(latitude, longitude, velocidadeKmh) {
   if (simulAtivo) {
     odomPosAnterior = { lat: latitude, lon: longitude };
-  } else if (velocidadeKmh > 2 && odomPosAnterior) {
+  } else if (!nativoAtivo && velocidadeKmh > 2 && odomPosAnterior) {
     const d = haversine(odomPosAnterior.lat, odomPosAnterior.lon, latitude, longitude);
     if (d > 0.5 && d < 200) {
       kmAtualVeiculo += d;
@@ -1824,6 +1853,8 @@ cfgKmAtual.addEventListener('change', () => {
   if (isFinite(v) && v >= 0) {
     kmAtualVeiculo = v;
     salvarKmAtual();
+    recalFila = true;                  // nativo re-semeia a base do acumulador
+    if (nativoAtivo) enviarStatusNativo();
     atualizarPainelManutencao();
     showFeedback('KM atual do veículo ajustado.', 'ok');
   } else if (cfgKmAtual.value !== '') {
@@ -1836,6 +1867,7 @@ cfgIntervalo.addEventListener('change', () => {
   if (isFinite(v) && v >= 0) {
     intervaloTrocaOleo = v;
     salvarIntervalo();
+    if (nativoAtivo) enviarStatusNativo();   // nativo passa a calcular o óleo logo
     atualizarPainelManutencao();
   } else if (cfgIntervalo.value !== '') {
     showFeedback('Valor inválido para o intervalo.');
@@ -1845,6 +1877,7 @@ cfgIntervalo.addEventListener('change', () => {
 btnRegistrarTroca.addEventListener('click', () => {
   kmUltimaTrocaOleo = kmAtualVeiculo;
   salvarKmTroca();
+  if (nativoAtivo) enviarStatusNativo();     // nativo grava a nova base do óleo
   atualizarPainelManutencao();
   showFeedback('Troca de óleo registrada!', 'ok');
 });
@@ -1863,6 +1896,10 @@ function zerarTrip(trip) {
   } else {
     tripAKm = 0;
     salvarTripA();
+  }
+  // no app nativo, zera também o acumulador do serviço de GPS
+  if (nativoAtivo && window.AndroidBridge && typeof window.AndroidBridge.resetTrip === 'function') {
+    try { window.AndroidBridge.resetTrip(trip); } catch (e) {}
   }
   atualizarPainelManutencao();
   showFeedback('Trip ' + trip + ' zerada!', 'ok');
@@ -2299,18 +2336,26 @@ window.FlowPilot = {
     if (intervaloTrocaConfigurado()) {
       falta = Math.max(0, intervaloTrocaOleo - (kmAtualVeiculo - kmUltimaTrocaOleo));
     }
-    return {
+    const status = {
       estado: corrida.estado,
       estadoRotulo: ROTULO_ESTADO[corrida.estado],
       coleta: corrida.coleta,
       destino: corrida.destino,
       kmAtual: isFinite(kmAtualVeiculo) ? kmAtualVeiculo : 0,
       kmFaltaOleo: falta,
+      kmTrocaOleo: isFinite(kmUltimaTrocaOleo) ? kmUltimaTrocaOleo : 0,
+      intervaloTroca: isFinite(intervaloTrocaOleo) ? intervaloTrocaOleo : 0,
       tripA: isFinite(tripAKm) ? tripAKm : 0,
       tripB: isFinite(tripBKm) ? tripBKm : 0,
       rotaAtiva: !!rotaAtiva,
       textoNotificacao: textoStatusNotificacao()
     };
+    // recalibração do odômetro: avisa o nativo UMA vez (ele re-semeia a base)
+    if (recalFila) {
+      status.recalibrarOdometro = true;
+      recalFila = false;
+    }
+    return status;
   },
   // injeção silenciosa (serviço nativo / link de captura), sem toque na tela
   setEnderecoColeta: function (endereco) { corridaSetEndereco('coleta', endereco, { silencioso: true }); },
@@ -2331,6 +2376,17 @@ if (btnEncerrarCorrida) {
 setInterval(() => {
   if (window.FlowPilot.proximidadeEvento && alvoCorrida()) {
     try { window.FlowPilot.proximidadeEvento(alvoCorrida()); } catch (e) {}
+  }
+}, 5000);
+
+// Espelha o odômetro/óleo do acumulador NATIVO a cada 5 s (dono da contagem no app).
+// Sem isso, após voltar do 2º plano a interface mostraria números de antes da viagem.
+setInterval(() => {
+  if (nativoAtivo) {
+    try {
+      sincronizarOdometroNativo(true);
+      enviarStatusNativo();
+    } catch (e) {}
   }
 }, 5000);
 

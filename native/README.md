@@ -23,15 +23,32 @@ na interface: os endereços só entram por injeção automática do serviço nat
 - **Único toque de emergência:** botão "Alternar Etapa" no widget flutuante, para quando
   o GPS não confirmar a chegada.
 
-## Pillar 3 — GPS em segundo plano
-- `ForegroundLocationService`: serviço em primeiro plano com a notificação persistente
-  "FlowPilot — [EMBARQUE/EM VIAGEM] / Odômetro: ... | Óleo: ...". Use
-  `@capacitor-community/background-geolocation` **ou** o `GoogleApiClient`/`FusedLocationProviderClient`
-  (o arquivo aqui ilustra o serviço; a coleta de localização em si fica a critério da lib escolhida).
+## Pillar 3 — GPS em segundo plano com COTADOR que não para
+Requisito crítico: a contagem do odômetro e da troca de óleo **não pode ser interrompida**
+enquanto o app estiver rodando — com tela apagada, celular bloqueado ou a 99/Uber em
+primeiro plano. O `ForegroundLocationService` garante isto:
+
+- **Fused Location com `PRIORITY_HIGH_ACCURACY`** — precisa adicionar no
+  `android/app/build.gradle` das dependências:
+  ```gradle
+  implementation "com.google.android.gms:play-services-location:21.0.1"
+  ```
+  (sem ela, o serviço cai num fallback para o provider `GPS_PROVIDER` do sistema.)
+- **Foreground service** do tipo `location`, usado com notificação fixa persistente na
+  barra de status ("FlowPilot — EMBARQUE/EM VIAGEM | Odômetro: ... | Óleo: falta ...").
+- **Partial WakeLock** (`flowpilot:gps`) impede o deep sleep da CPU enquanto conta.
+- A cada tick, a distância é somada **direto no acumulador nativo** (`FlowBridge.somarKm`):
+  odômetro total + Trip A/B, gravando continuamente a cada atualização.
+- A troca de óleo usa a mesma base: `falta = intervalo - (total - trocaBase)`.
+- O acumulador é **a fonte de verdade** quando o app roda; o `app.js` apenas espelha via
+  `AndroidBridge.getStatus()` (evita contar o mesmo km duas vezes). Em PWA puro (browser),
+  o web acumula sozinho como antes.
+- `stopWithTask="false"` no manifest: descartar o app da lista recente não mata o serviço.
 
 ## Pillar 4 — overlay flutuante (sobre o app da 99)
 - `OverlayService` + `SYSTEM_ALERT_WINDOW`: janela com velocidade, próxima manobra, ETA e botões
-  [Alternar Etapa] [+ Centralizar] [Abrir FlowPilot].
+  [Alternar Etapa] [Abrir FlowPilot]. Desenha por cima de QUALQUER app (inclusive a 99),
+  com `TYPE_APPLICATION_OVERLAY` no `WindowManager` — só existe dentro do APK compilado.
 
 ---
 

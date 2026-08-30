@@ -42,11 +42,14 @@
 
         <!-- Continua capturando endereço quando o app chegou com o texto incompleto → obj extra -->
 
-        <!-- 3. GPS em segundo plano (foreground com notificação fixa) -->
+        <!-- 3. GPS em segundo plano (foreground com notificação fixa).
+             stopWithTask=false: descartar o app da lista recente NÃO pode parar a
+             contagem de quilometragem. -->
         <service
             android:name="com.flowpilot.app.ForegroundLocationService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="location" />
 
         <!-- 2. Leitor de notificações da 99 (endereço de coleta/destino) -->

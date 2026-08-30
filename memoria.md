@@ -256,6 +256,12 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
 - `acumularHodometro()` roda a cada `atualizarPosicaoVeiculo()`: somar `haversine()`
   entre posições quando `speed > 2 km/h`. Ignora simulador (`simulAtivo`), ruído
   (< 0,5 m) e saltos do GPS (> 200 m). Persiste via `salvarKmAtual()`.
+- **App nativo = fonte de verdade:** quando `window.AndroidBridge` existe (WebView do app),
+  o web NÃO acumula (guard `!nativoAtivo`); quem conta é o `ForegroundLocationService`
+  (PRIORITY_HIGH_ACCURACY + Partial WakeLock + gravação contínua em `FlowBridge.somarKm`
+  → prefs `km_seed`/`km_nativo`). O web espelha via `AndroidBridge.getStatus()` a cada 5 s.
+- Recalibração do KM no modal → `recalibrarOdometro:true` na 1ª push → o nativo re-semeia a
+  base preservando o deslocamento da troca de óleo (`FlowBridge.updateStatus`).
 
 ### UI
 - Engrenagem flutuante `#settings-btn` (trilha direita, acima do botão de tráfego,
