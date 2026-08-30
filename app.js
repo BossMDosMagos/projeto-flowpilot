@@ -6,6 +6,7 @@
 /* ---------- Estado global ---------- */
 let map = null;              // Instância do MapLibre
 let vehicleMarker = null;    // Marcador do veículo (MapLibre Marker)
+let destinoMarker = null;    // Bandeira de chegada no destino (MapLibre Marker)
 let sourceRota = null;       // Fonte GeoJSON da rota
 let currentRouteCoords = null; // Coordenadas da rota ativa (para re-desenho ao trocar tema)
 let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
@@ -175,6 +176,42 @@ function atualizarSetaVeiculo() {
   // A seta aponta para cima; o mapa gira pelo bearing para o heading.
   const arr = vehicleMarker.getElement().querySelector('.vehicle-arrow');
   if (arr) arr.style.transform = 'rotate(0deg)'; // mantém apontando para cima
+}
+
+/* ---------- BANDEIRA DE CHEGADA (quadriculada preto/branco) ---------- */
+function bandeiraChegadaSVG() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">` +
+    `<defs><pattern id="checker-finish" width="3.5" height="3.6667" patternUnits="userSpaceOnUse">` +
+    `<rect width="3.5" height="3.6667" fill="#ffffff"/>` +
+    `<rect width="1.75" height="1.8333" fill="#0f172a"/>` +
+    `<rect x="1.75" y="1.8333" width="1.75" height="1.8333" fill="#0f172a"/>` +
+    `</pattern></defs>` +
+    `<rect x="5" y="2" width="2" height="21" rx="1" fill="#94a3b8"/>` +
+    `<rect x="7" y="3" width="14" height="11" fill="url(#checker-finish)" stroke="#1e293b" stroke-width="0.7"/>` +
+    `</svg>`;
+}
+
+// Cria (ou recria) a bandeira de chegada no ponto final da rota (coords [lon, lat])
+function createDestinoMarker(coords) {
+  if (!coords) return;
+  if (destinoMarker) {
+    destinoMarker.remove();
+    destinoMarker = null;
+  }
+  const el = document.createElement('div');
+  el.className = 'destination-marker';
+  el.innerHTML = `<div class="destination-flag">${bandeiraChegadaSVG()}</div>`;
+  destinoMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+    .setLngLat([coords[0], coords[1]])
+    .addTo(map);
+  return destinoMarker;
+}
+
+function removerDestinoMarker() {
+  if (destinoMarker) {
+    destinoMarker.remove();
+    destinoMarker = null;
+  }
 }
 
 /* ---------- 3. GPS EM TEMPO REAL (watchPosition) ---------- */
@@ -450,6 +487,10 @@ function desenharRota(coordenadas) {
   });
 
   sourceRota = 'rota';
+
+  // Bandeira de chegada quadriculada no ponto final da rota
+  const ultimo = coordenadas[coordenadas.length - 1];
+  if (ultimo) createDestinoMarker(ultimo);
 
   // Ajusta o mapa para caber a rota
   const bounds = coordenadas.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coordenadas[0], coordenadas[0]));
@@ -752,6 +793,7 @@ function novaRota() {
   currentStepIndex = 0;
   enunciadoPerto.clear();
   destinoSelecionado = null;
+  removerDestinoMarker();
 
   etaTimeEl.textContent = '--:--';
   distKmEl.textContent = '0.0 km';

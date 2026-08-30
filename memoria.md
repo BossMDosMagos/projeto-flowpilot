@@ -107,6 +107,13 @@ A base da seta SVG aponta para a **direita**; a rotação é feita via CSS:
 | `.maneuver-sharp-right` | 45° |
 | `.maneuver-sharp-left` | 135° |
 
+### Bandeira de chegada
+No fim da rota é plantada uma **bandeira quadriculada preto/branco** (SVG com padrão
+`#checker-finish`) via `createDestinoMarker()` — ancorada no último ponto de
+`currentRouteCoords`, com leve animação de balanço. Criada em `desenharRota()`, removida
+em `novaRota()`/`removerDestinoMarker()`. Persiste no mapa após a chegada (não é removida
+pelo fim da navegação).
+
 ### Sub-título do card (`descricaoProximaAcao`)
 Gera frase clara sobre a próxima manobra, ex.:
 - "Vire à direita em 200 m"
