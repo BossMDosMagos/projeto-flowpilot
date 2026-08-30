@@ -31,15 +31,27 @@ function initMap() {
     zoomControl: false // Interface clean, sem controles poluentes
   });
 
-  // Camada de tiles - CartoDB Positron (muted/limpo)
-  // endereço estável e sem API key, compatível com desktop e mobile
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+  // Camada de tiles - CartoDB Positron (muted/limpo) com fallback OSM
+  const positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO',
     subdomains: 'abcd',
     maxZoom: 19,
-    maxNativeZoom: 19,
-    detectRetina: false
+    maxNativeZoom: 19
   }).addTo(map);
+
+  // Fallback: se os tiles do CartoDB falharem (ex: rede lenta no mobile),
+  // troca para o OpenStreetMap padrão que nunca solicita API key.
+  map.on('tileerror', () => {
+    if (!window.fallbackOsmAtivado) {
+      window.fallbackOsmAtivado = true;
+      console.warn('⚠️ Tile error no CartoDB. Usando fallback OpenStreetMap.');
+      map.removeLayer(positron);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+    }
+  });
 
   // Criar marcador do veículo (posição inicial padrão)
   vehicleMarker = createVehicleMarker(defaultCoords);
