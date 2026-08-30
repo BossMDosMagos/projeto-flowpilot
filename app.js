@@ -15,6 +15,7 @@ let lastHeading = 0;         // Último rumo (heading) do GPS
 let currentSteps = [];       // Passos da rota atual (com geometrias)
 let currentStepIndex = 0;    // Índice da instrução atual
 let enunciadoPerto = new Set(); // Passos já anunciados por voz (evita repetição)
+let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -22,6 +23,7 @@ const inputDestino = $('destino-input');
 const btnIniciar = $('iniciar-rota-btn');
 const btnLocate = $('locate-btn');
 const btnTheme = $('theme-btn');
+const btnNovaRota = $('nova-rota-btn');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -482,12 +484,62 @@ function exibirInstrucao(index) {
   instrTextEl.textContent = text;
   instrManeuverEl.textContent = iconeManeuver(step.maneuver.type, step.maneuver.modifier);
   instrDistEl.textContent = 'Próxima manobra: ' + formatarDistancia(curta(step.distance));
-  navInstructionEl.classList.remove('hidden');
+  ativarRota();
 }
 
 function ocultarInstrucao() {
-  navInstructionEl.classList.add('hidden');
+  desativarRota();
 }
+
+// Liga o modo "rota ativa": esconde a busca e mostra a instrução no topo
+function ativarRota() {
+  rotaAtiva = true;
+  document.body.classList.add('rota-ativa');
+}
+
+// Desliga o modo "rota ativa": volta a mostrar a busca
+function desativarRota() {
+  rotaAtiva = false;
+  document.body.classList.remove('rota-ativa');
+}
+
+// Inicia uma nova rota: limpa a atual, volta à busca e recentraliza no veículo
+function novaRota() {
+  // Para qualquer fala pendente
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+  // Limpa a rota do mapa
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+    map.removeLayer(routeLayer2);
+    routeLayer = null;
+    routeLayer2 = null;
+  }
+
+  // Reseta estado de navegação
+  currentSteps = [];
+  currentStepIndex = 0;
+  enunciadoPerto.clear();
+  destinoSelecionado = null;
+
+  // Volta ETA/distância ao padrão e desativa o modo rota
+  etaTimeEl.textContent = '--:--';
+  distKmEl.textContent = '0.0 km';
+  desativarRota();
+  ocultarInstrucao();
+
+  // Limpa o campo de busca e foca/recentra no veículo
+  inputDestino.value = '';
+  setFollowMode(true);
+  const pos = window.currentCoords;
+  if (pos) {
+    map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), 15), { animate: true });
+  }
+  inputDestino.focus();
+}
+
+// Botão "nova rota" do card de instrução
+btnNovaRota.addEventListener('click', novaRota);
 
 // Atualiza continuamente qual instrução mostrar conforme o veículo avança
 function atualizarInstrucao(origem) {
@@ -515,6 +567,7 @@ function atualizarInstrucao(origem) {
     } else {
       // Último passo = chegada ao destino
       ocultarInstrucao();
+      showFeedback('Você chegou ao destino!');
     }
   }
 }

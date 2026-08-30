@@ -236,13 +236,29 @@ body.noturno .route-line {
 }
 
 /* ============================================
+   ESTADOS DE NAVEGAÇÃO (busca vs. instrução)
+   ============================================ */
+/* Quando há rota ativa, esconde a busca e mostra a instrução no topo */
+body.rota-ativa #top-bar {
+  display: none;
+}
+
+body.rota-ativa #nav-instruction {
+  display: flex;
+}
+
+body:not(.rota-ativa) #nav-instruction {
+  display: none;
+}
+
+/* ============================================
    PAINEL DE INSTRUÇÃO DE NAVEGAÇÃO
    ============================================ */
 .nav-instruction {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 130px;
+  top: 12px;
   z-index: 1000;
   width: calc(100% - 24px);
   max-width: 420px;
@@ -278,6 +294,7 @@ body.noturno .route-line {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 #instr-text {
@@ -292,6 +309,30 @@ body.noturno .route-line {
   font-weight: 600;
   color: var(--text-secondary);
   margin-top: 2px;
+}
+
+/* Botão para iniciar uma nova rota */
+#nova-rota-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+
+#nova-rota-btn:hover {
+  opacity: 0.9;
+}
+
+#nova-rota-btn:active {
+  transform: scale(0.92);
 }
 
 /* ============================================
@@ -414,7 +455,7 @@ body.noturno .route-line {
    RESPONSIVIDADE
    ============================================ */
 @media (max-width: 480px) {
-  #top-bar, #bottom-panel {
+  #top-bar, #bottom-panel, .nav-instruction {
     width: calc(100% - 16px);
   }
 }

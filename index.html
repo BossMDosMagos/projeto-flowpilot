@@ -29,6 +29,21 @@
     <div id="sugestoes" class="sugestoes"></div>
   </div>
 
+  <!-- Painel de instrução de navegação (passo atual) - substitui a busca quando há rota ativa -->
+  <div id="nav-instruction" class="nav-instruction hidden">
+    <span id="instr-maneuver" class="instr-maneuver"></span>
+    <div class="instr-text-wrap">
+      <span id="instr-text"></span>
+      <span id="instr-dist" class="instr-dist"></span>
+    </div>
+    <button id="nova-rota-btn" type="button" title="Iniciar nova rota" aria-label="Iniciar nova rota">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8z"/>
+        <path d="M13 12V7h-2v5H6v2h5v5h2v-5h5v-2h-5z"/>
+      </svg>
+    </button>
+  </div>
+
   <!-- Botão flutuante: centralizar no veículo -->
   <button id="locate-btn" type="button" aria-label="Centralizar no veículo" title="Centralizar no veículo">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
@@ -46,15 +61,6 @@
       <path d="M20.6 13.4A8 8 0 0 1 10.6 3.4a8 8 0 1 0 10 10z"/>
     </svg>
   </button>
-
-  <!-- Painel de instrução de navegação (passo atual) -->
-  <div id="nav-instruction" class="nav-instruction hidden">
-    <span id="instr-maneuver" class="instr-maneuver"></span>
-    <div class="instr-text-wrap">
-      <span id="instr-text"></span>
-      <span id="instr-dist" class="instr-dist"></span>
-    </div>
-  </div>
 
   <!-- Painel Inferior Flutuante (Telemetria) -->
   <div id="bottom-panel">
