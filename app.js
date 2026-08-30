@@ -7,9 +7,11 @@
 let map = null;              // Instância do MapLibre
 let vehicleMarker = null;    // Marcador do veículo (MapLibre Marker)
 let sourceRota = null;       // Fonte GeoJSON da rota
+let currentRouteCoords = null; // Coordenadas da rota ativa (para re-desenho ao trocar tema)
 let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
 let destinoSelecionado = null; // {lon, lat, nome}
 let followMode = true;       // Se o mapa segue automaticamente o veículo
+let temaEscuro = true;       // Tema atual (Dark Matter escuro por padrão)
 let lastHeading = 0;         // Último rumo (heading) do GPS
 let currentSteps = [];       // Passos da rota atual (com geometrias)
 let currentStepIndex = 0;    // Índice da instrução atual
@@ -34,6 +36,7 @@ const instrDistEl = $('instr-dist');
 
 // Constantes de estilo do mapa
 const STYLE_CARTO_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+const STYLE_CARTO_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 const PITCH_NAVEGACAO = 50;   // Inclinação 3D de pilotagem (45-50°)
 const ZOOM_MOVIMENTO = 17;    // Zoom aproximado quando o veículo está em movimento
 const ZOOM_PARADO = 16;       // Zoom padrão quando parado/navegando
@@ -77,18 +80,20 @@ function initMap() {
     setFollowMode(true);
   });
 
-  // Modo noturno é nativo (Dark Matter é escuro) - mantemos o botão alternando suavidade
+  // Botão flutuante: alternar tema claro/escuro (troca o estilo do mapa)
   btnTheme.addEventListener('click', () => {
-    // Dark Matter já é escuro; o botão desloca o veículo para melhor contraste
-    document.body.classList.toggle('noturno');
-    try { localStorage.setItem('flowpilot:tema', document.body.classList.contains('noturno')); } catch (e) {}
-    aplicarTemaSalvo();
+    const escuro = document.body.classList.toggle('noturno');
+    try { localStorage.setItem('flowpilot:tema', escuro ? 'escuro' : 'claro'); } catch (e) {}
+    aplicarTema(escuro);
   });
 
   // Evento "mover" do usuário desativa follow
   map.on('moveend', () => {
     touchManipulado = false;
   });
+
+  // Aplica o tema salvo (claro/escuro) na inicialização
+  carregarTemaInicial();
 
   startGPSTracking();
 }
@@ -99,9 +104,48 @@ function setFollowMode(ativo) {
   btnLocate.classList.toggle('active', ativo);
 }
 
-// Aplica adequações de tema (Dark Matter já é escuro por padrão)
-function aplicarTemaSalvo() {
-  document.body.classList.toggle('noturno', true);
+// Lê a preferência de tema salva e aplica (escuro por padrão)
+function carregarTemaInicial() {
+  let escuro = true;
+  try {
+    escuro = (localStorage.getItem('flowpilot:tema') || 'escuro') !== 'claro';
+  } catch (e) {}
+  // Se o tema salvo for claro, troca o estilo (o mapa inicia escuro)
+  if (!escuro) {
+    temaEscuro = true; // força a troca em aplicarTema
+    aplicarTema(false);
+  } else {
+    document.body.classList.add('noturno');
+  }
+}
+
+// Alterna o estilo do mapa (Dark Matter = escuro, Positron = claro)
+function aplicarTema(escuro) {
+  if (temaEscuro === escuro) return;
+  temaEscuro = escuro;
+  document.body.classList.toggle('noturno', escuro);
+  const style = escuro ? STYLE_CARTO_DARK : STYLE_CARTO_LIGHT;
+
+  map.setStyle(style);
+
+  // Ao recarregar o estilo, o marcador e as camadas de rota são perdidos.
+  map.once('style.load', () => {
+    recriarCamadas();
+  });
+}
+
+// Recria marcador do veículo e rota após troca de estilo
+function recriarCamadas() {
+  const pos = window.currentCoords || null;
+  if (pos && pos.lat !== undefined && pos.lon !== undefined) {
+    vehicleMarker = createVehicleMarker([pos.lon, pos.lat]);
+  } else {
+    vehicleMarker = createVehicleMarker([-46.6333, -23.5505]);
+  }
+  // Re-traça a rota ativa, se houver
+  if (rotaAtiva && currentRouteCoords) {
+    desenharRota(currentRouteCoords);
+  }
 }
 
 /* ---------- 2. MARCADOR PERSONALIZADO DO VEÍCULO ---------- */
@@ -350,6 +394,8 @@ function tracarRota() {
 // Desenha a rota como camada GeoJSON (halo + linha principal)
 function desenharRota(coordenadas) {
   if (!map.isStyleLoaded() && !map.loaded()) return;
+
+  currentRouteCoords = coordenadas;
 
   const geojson = {
     type: 'Feature',
