@@ -225,13 +225,9 @@ html, body {
 body.noturno #theme-btn .icon-sun { display: none; }
 body.noturno #theme-btn .icon-moon { display: block; }
 
-/* Modo noturno: filtra os tiles para escurecer (sem trocar de provedor) */
-body.noturno #map .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.85);
-}
-
-/* Ajusta a rota azul para ficar visível sobre o fundo escuro no modo noturno */
-body.noturno .route-line {
+/* MapLibre: Dark Matter já é escuro por padrão. Ajusta contraste da rota. */
+body.noturno .route-line,
+.route-line {
   filter: drop-shadow(0 0 6px rgba(96, 165, 250, 0.9));
 }
 
@@ -413,6 +409,11 @@ body:not(.rota-ativa) #nav-instruction {
 /* ============================================
    MARKER PERSONALIZADO (veículo do motorista)
    ============================================ */
+.vehicle-marker-wrap {
+  width: 46px;
+  height: 46px;
+}
+
 .vehicle-marker {
   width: 46px;
   height: 46px;
@@ -424,10 +425,11 @@ body:not(.rota-ativa) #nav-instruction {
   align-items: center;
   justify-content: center;
   position: relative;
-  /* A seta dentro rotaciona conforme o heading do GPS */
 }
 
 .vehicle-marker .vehicle-arrow {
+  position: absolute;
+  top: 6px;
   width: 0;
   height: 0;
   border-left: 10px solid transparent;
@@ -437,11 +439,12 @@ body:not(.rota-ativa) #nav-instruction {
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
 }
 
-/* Tooltip do Leaflet */
-.leaflet-tooltip.vehicle-label {
-  font-weight: 700;
-  font-size: 13px;
-  color: #0f172a;
+.vehicle-marker .vehicle-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  margin-top: 12px;
 }
 
 /* ============================================

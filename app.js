@@ -1,21 +1,20 @@
 /* ============================================
-   FLOWPILOT - Navegação GPS em tempo real (Leaflet)
-   Stack: Leaflet.js + OpenStreetMap + OSRM público
+   FLOWPILOT - Navegação GPS em tempo real (MapLibre GL)
+   Stack: MapLibre GL + CartoDB Dark Matter + OSRM público
    ============================================ */
 
 /* ---------- Estado global ---------- */
-let map = null;              // Instância do Leaflet map
-let vehicleMarker = null;    // Marcador do veículo do motorista
-let routeLayer = null;       // Camada da rota (Polyline)
-let routeLayer2 = null;      // Camada de halo/contorno da rota
-let watchId = null;          // ID do watchPosition
+let map = null;              // Instância do MapLibre
+let vehicleMarker = null;    // Marcador do veículo (MapLibre Marker)
+let sourceRota = null;       // Fonte GeoJSON da rota
+let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
 let destinoSelecionado = null; // {lon, lat, nome}
 let followMode = true;       // Se o mapa segue automaticamente o veículo
 let lastHeading = 0;         // Último rumo (heading) do GPS
 let currentSteps = [];       // Passos da rota atual (com geometrias)
 let currentStepIndex = 0;    // Índice da instrução atual
-let enunciadoPerto = new Set(); // Passos já anunciados por voz (evita repetição)
-let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
+let enunciadoPerto = new Set(); // Passos já anunciados por voz
+let touchManipulado = false; // Se o usuário manipulou o mapa manualmente
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -33,48 +32,68 @@ const instrManeuverEl = $('instr-maneuver');
 const instrTextEl = $('instr-text');
 const instrDistEl = $('instr-dist');
 
+// Constantes de estilo do mapa
+const STYLE_CARTO_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+const PITCH_NAVEGACAO = 50;   // Inclinação 3D de pilotagem (45-50°)
+const ZOOM_MOVIMENTO = 17;    // Zoom aproximado quando o veículo está em movimento
+const ZOOM_PARADO = 16;       // Zoom padrão quando parado/navegando
+
 /* ---------- 1. INICIALIZAÇÃO DO MAPA ---------- */
 function initMap() {
-  // Coordenada padrão: São Paulo (alternativa: Rio de Janeiro -23.55, -46.63)
+  // Coordenada padrão: São Paulo
   const defaultCoords = [-23.5505, -46.6333];
 
-  map = L.map('map', {
-    center: defaultCoords,
-    zoom: 15, // Nível adequado para navegação urbana
-    zoomControl: false // Interface clean, sem controles poluentes
+  map = new maplibregl.Map({
+    container: 'map',
+    style: STYLE_CARTO_DARK,
+    center: [defaultCoords[1], defaultCoords[0]],
+    zoom: ZOOM_PARADO,
+    pitch: 0,
+    bearing: 0,
+    minZoom: 3,
+    maxZoom: 20,
+    attributionControl: { compact: true }
   });
 
-  // Camada de tiles - OpenStreetMap padrão (100% gratuito, sem API key)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-    maxNativeZoom: 19
-  }).addTo(map);
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
-  // Criar marcador do veículo (posição inicial padrão)
-  vehicleMarker = createVehicleMarker(defaultCoords);
+  // Criar o marcador do veículo quando o estilo carregar
+  map.on('load', () => {
+    vehicleMarker = createVehicleMarker(defaultCoords);
+  });
 
-  // Se o usuário arrastar o mapa manualmente, desativa o follow automático
-  map.on('dragstart', () => setFollowMode(false));
+  // Se o usuário manipular o mapa manualmente, desativa o follow
+  map.on('dragstart', () => { followMode = false; setFollowMode(false); });
+  map.on('touchstart', () => { followMode = false; setFollowMode(false); });
 
   // Botão flutuante: centraliza novamente no veículo e reativa o follow
   btnLocate.addEventListener('click', () => {
     const pos = window.currentCoords;
     if (pos) {
-      map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), 15), { animate: true });
+      map.easeTo({
+        center: [pos.lon, pos.lat],
+        zoom: Math.max(map.getZoom(), ZOOM_PARADO),
+        bearing: rotaAtiva ? lastHeading : 0,
+        pitch: rotaAtiva ? PITCH_NAVEGACAO : 0
+      });
     }
     setFollowMode(true);
   });
 
-  // Modo noturno: carrega a preferência salva e configura a alternância
-  aplicarTemaSalvo();
+  // Modo noturno é nativo (Dark Matter é escuro) - mantemos o botão alternando suavidade
   btnTheme.addEventListener('click', () => {
-    const noturno = !document.body.classList.contains('noturno');
-    document.body.classList.toggle('noturno', noturno);
-    try { localStorage.setItem('flowpilot:tema', String(noturno)); } catch (e) {}
+    // Dark Matter já é escuro; o botão desloca o veículo para melhor contraste
+    document.body.classList.toggle('noturno');
+    try { localStorage.setItem('flowpilot:tema', document.body.classList.contains('noturno')); } catch (e) {}
+    aplicarTemaSalvo();
   });
 
-  // Iniciar rastreamento GPS em tempo real
+  // Evento "mover" do usuário desativa follow
+  map.on('moveend', () => {
+    touchManipulado = false;
+  });
+
   startGPSTracking();
 }
 
@@ -84,41 +103,40 @@ function setFollowMode(ativo) {
   btnLocate.classList.toggle('active', ativo);
 }
 
-// Aplica o tema salvo (padrão diurno)
+// Aplica adequações de tema (Dark Matter já é escuro por padrão)
 function aplicarTemaSalvo() {
-  let noturno = false;
-  try { noturno = localStorage.getItem('flowpilot:tema') === 'true'; } catch (e) {}
-  document.body.classList.toggle('noturno', noturno);
+  document.body.classList.toggle('noturno', true);
 }
 
 /* ---------- 2. MARCADOR PERSONALIZADO DO VEÍCULO ---------- */
 function createVehicleMarker(coords) {
-  const icon = L.divIcon({
-    className: '',
-    html: '<div class="vehicle-marker"><span class="vehicle-arrow"></span></div>',
-    iconSize: [46, 46],
-    iconAnchor: [23, 23]
-  });
+  // Elemento HTML do marcador (seta que aponta para cima no centro)
+  const el = document.createElement('div');
+  el.className = 'vehicle-marker-wrap';
+  el.innerHTML = '<div class="vehicle-marker"><span class="vehicle-arrow"></span><span class="vehicle-dot"></span></div>';
 
-  const marker = L.marker(coords, {
-    icon: icon,
-    zIndexOffset: 1000
-  }).addTo(map);
-
-  // Tooltip com o nome do app
-  marker.bindTooltip('FlowPilot', {
-    className: 'vehicle-label',
-    direction: 'top',
-    offset: [0, -20]
-  });
+  const marker = new maplibregl.Marker({
+    element: el,
+    anchor: 'center'
+  })
+    .setLngLat([coords[1], coords[0]])
+    .addTo(map);
 
   return marker;
+}
+
+// Atualiza a seta do veículo: com bearing do mapa, o marcador fica apontando
+// para "cima" (direção de deslocamento); guardamos o heading para o mapa girar.
+function atualizarSetaVeiculo() {
+  // A seta aponta para cima; o mapa gira pelo bearing para o heading.
+  const arr = vehicleMarker.getElement().querySelector('.vehicle-arrow');
+  if (arr) arr.style.transform = 'rotate(0deg)'; // mantém apontando para cima
 }
 
 /* ---------- 3. GPS EM TEMPO REAL (watchPosition) ---------- */
 function startGPSTracking() {
   if (!navigator.geolocation) {
-    console.error('❌ Geolocalização não suportada');
+    console.error('Geolocalização não suportada');
     alert('Geolocalização não suportada no seu navegador.');
     return;
   }
@@ -126,44 +144,40 @@ function startGPSTracking() {
   watchId = navigator.geolocation.watchPosition(
     (position) => {
       const { latitude, longitude, speed, heading } = position.coords;
-      const coords = [latitude, longitude];
+      const pos = [longitude, latitude];
 
-      // Move o marcador do veículo para a posição atual
-      vehicleMarker.setLatLng(coords);
+      // Move o marcador do veículo
+      if (vehicleMarker) vehicleMarker.setLngLat(pos);
 
-      // Gira a seta do veículo apontando para o rumo (heading)
-      if (typeof heading === 'number' && !isNaN(heading)) {
-        lastHeading = heading;
-        const arrow = vehicleMarker.getElement()?.querySelector('.vehicle-arrow');
-        if (arrow) {
-          arrow.style.transform = `rotate(${heading}deg)`;
-        }
-      }
+      const velocidade = (typeof speed === 'number' && !isNaN(speed)) ? speed * 3.6 : 0;
 
-      // Só centraliza o mapa se o modo follow estiver ativado
-      if (followMode) {
-        map.setView(coords, map.getZoom(), { animate: true });
-      }
+      // Guarda heading para navegação
+      if (typeof heading === 'number' && !isNaN(heading)) lastHeading = heading;
 
-      // Atualiza o velocímetro: speed vem em m/s, converter para km/h
-      if (typeof speed === 'number' && !isNaN(speed)) {
-        const kmh = Math.round(speed * 3.6);
-        velocimetroEl.textContent = kmh;
-        atualizarCorVelocimetro(kmh);
-      } else {
-        velocimetroEl.textContent = '0';
-        atualizarCorVelocimetro(0);
-      }
+      // Atualiza o velocímetro
+      velocimetroEl.textContent = Math.round(velocidade);
+      atualizarCorVelocimetro(Math.round(velocidade));
 
-      // Guarda a posição mais recente para roteamento
+      // Guarda posição para roteamento
       window.currentCoords = { lat: latitude, lon: longitude };
 
-      // Atualiza a instrução de navegação conforme o veículo avança
+      // Atualiza a instrução de navegação conforme avança
       atualizarInstrucao(window.currentCoords);
+
+      // Segue o veículo (com pitch/bearing no modo rota)
+      if (followMode) {
+        acompanharVeiculo(pos, velocidade, heading);
+      }
+
+      // Zoom automático 17/18 quando em movimento (durante navegação)
+      if (rotaAtiva && followMode && velocidade > 5) {
+        if (map.getZoom() < 17) {
+          map.easeTo({ zoom: Math.min(18, Math.max(map.getZoom(), 17)), duration: 800 });
+        }
+      }
     },
     (error) => {
-      console.error('❌ Erro de GPS:', error);
-      // Tratamento amigável de cada tipo de erro
+      console.error('Erro de GPS:', error);
       let msg = 'Erro ao obter localização.';
       switch (error.code) {
         case error.PERMISSION_DENIED:
@@ -178,12 +192,37 @@ function startGPSTracking() {
       }
       showFeedback(msg);
     },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15000
-    }
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
   );
+}
+
+// Acompanha o veículo com perspectiva 3D e rotação (estilo Waze)
+function acompanharVeiculo(pos, velocidade, heading) {
+  if (!map) return;
+
+  const opcoes = {
+    center: pos,
+    duration: 500,
+    essential: true
+  };
+
+  // Durante a navegação: inclina a câmera e gira para o rumo
+  if (rotaAtiva) {
+    opcoes.pitch = PITCH_NAVEGACAO;
+    if (typeof heading === 'number' && !isNaN(heading)) {
+      opcoes.bearing = heading;
+    }
+    // Aproxima quando em movimento
+    if (velocidade > 5) {
+      opcoes.zoom = Math.max(map.getZoom(), ZOOM_MOVIMENTO);
+    }
+  } else {
+    // Sem rota: visão de cima, sem inclinação
+    opcoes.pitch = 0;
+    opcoes.bearing = 0;
+  }
+
+  map.easeTo(opcoes);
 }
 
 /* ---------- 4. BUSCA DE DESTINO (Nominatim) ---------- */
@@ -198,11 +237,9 @@ inputDestino.addEventListener('input', () => {
     return;
   }
 
-  // Debounce de 400ms para não sobrecarregar a API
   debounceTimer = setTimeout(() => buscarEndereco(query), 400);
 });
 
-// Consulta ao Nominatim, regionalizada ao Brasil (rápida e gratuita)
 function buscarEndereco(query) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=br&bounded=1`;
 
@@ -213,7 +250,7 @@ function buscarEndereco(query) {
     })
     .then(exibirSugestoes)
     .catch(err => {
-      console.error('❌ Erro na busca Nominatim:', err);
+      console.error('Erro na busca Nominatim:', err);
       hideSugestoes();
     });
 }
@@ -259,16 +296,13 @@ document.addEventListener('click', (e) => {
 btnIniciar.addEventListener('click', () => tracarRota());
 
 function tracarRota() {
-  // Precisa de um destino selecionado (via sugestão)
   if (!destinoSelecionado) {
     showFeedback('Selecione um destino na lista de sugestões.');
     return;
   }
 
-  // Precisa da posição atual do motorista (ou usa default)
   const origem = window.currentCoords || { lon: -46.6333, lat: -23.5505 };
 
-  // Monta a URL do OSRM público (endpoint de direção)
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${origem.lon},${origem.lat};${destinoSelecionado.lon},${destinoSelecionado.lat}` +
@@ -287,67 +321,100 @@ function tracarRota() {
       const route = data.routes[0];
       desenharRota(route.geometry.coordinates);
 
-      // Guarda os passos (instruções) para navegação passo-a-passo
+      // Guarda os passos para navegação
       if (route.legs && route.legs[0] && route.legs[0].steps) {
         currentSteps = route.legs[0].steps;
         currentStepIndex = 0;
         enunciadoPerto.clear();
         exibirInstrucao(0);
-        // Anuncia a primeira instrução em voz alta
         falarVoz(instrucaoTexto(currentSteps[0]));
       } else {
         currentSteps = [];
         ocultarInstrucao();
       }
 
-      // Extrai duração (segundos -> minutos) e distância (metros -> km)
       const minutos = Math.max(1, Math.round(route.duration / 60));
       const km = (route.distance / 1000).toFixed(1);
 
-      // Registra o destino usado nos recentes
       registrarDestinoRecente(destinoSelecionado);
 
-      // Formata ETA como HH:MM ou MM:SS
-      const eta = formatarETA(minutos);
-
-      // Atualiza o painel inferior em tempo real
-      etaTimeEl.textContent = eta;
+      etaTimeEl.textContent = formatarETA(minutos);
       distKmEl.textContent = `${km} km`;
+
+      // Ativa o modo rota (perspectiva 3D + rotação)
+      ativarRota();
+      destacarRota();
     })
     .catch(err => {
-      console.error('❌ Erro no OSRM:', err);
+      console.error('Erro no OSRM:', err);
       showFeedback('Não foi possível calcular a rota. Tente novamente.');
     });
 }
 
-// Desenha a Polyline da rota em azul destacado e espesso
+// Desenha a rota como camada GeoJSON (halo + linha principal)
 function desenharRota(coordenadas) {
-  // Converte [lng, lat] -> [lat, lng] para o Leaflet
-  const latlngs = coordenadas.map(c => [c[1], c[0]]);
+  if (!map.isStyleLoaded() && !map.loaded()) return;
 
-  // Remove rota anterior, se existir
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    map.removeLayer(routeLayer2);
+  const geojson = {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'LineString', coordinates: coordenadas }
+  };
+
+  // Remove rota anterior
+  if (sourceRota) {
+    try { map.removeLayer('rota-halo'); } catch (e) {}
+    try { map.removeLayer('rota-linha'); } catch (e) {}
+    try { map.removeSource('rota'); } catch (e) {}
   }
 
-  // Halo (contorno) grosso e semi-transparente para destaque
-  routeLayer2 = L.polyline(latlngs, {
-    color: '#1d4ed8',
-    weight: 10,
-    opacity: 0.4
-  }).addTo(map);
+  map.addSource('rota', { type: 'geojson', data: geojson });
 
-  // Linha principal azul brilhante
-  routeLayer = L.polyline(latlngs, {
-    color: '#2563eb',
-    weight: 6,
-    opacity: 0.95,
-    className: 'route-line'
-  }).addTo(map);
+  // Halo (contorno) grosso
+  map.addLayer({
+    id: 'rota-halo',
+    type: 'line',
+    source: 'rota',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#1d4ed8',
+      'line-width': 12,
+      'line-opacity': 0.35
+    }
+  });
 
-  // Ajusta o mapa para caber toda a rota
-  map.fitBounds(routeLayer.getBounds(), { padding: [50, 60] });
+  // Linha principal
+  map.addLayer({
+    id: 'rota-linha',
+    type: 'line',
+    source: 'rota',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#3b82f6',
+      'line-width': 6,
+      'line-opacity': 0.95
+    }
+  });
+
+  sourceRota = 'rota';
+
+  // Ajusta o mapa para caber a rota
+  const bounds = coordenadas.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coordenadas[0], coordenadas[0]));
+  map.fitBounds(bounds, { padding: 80, duration: 800 });
+}
+
+// Após a rota ser traçada, muda para perspectiva de piloto e centraliza no veículo
+function destacarRota() {
+  const pos = window.currentCoords;
+  if (!pos) return;
+  setFollowMode(true);
+  map.easeTo({
+    center: [pos.lon, pos.lat],
+    zoom: ZOOM_PARADO,
+    pitch: PITCH_NAVEGACAO,
+    bearing: lastHeading || 0,
+    duration: 1200
+  });
 }
 
 /* ---------- 6. UTILITÁRIOS ---------- */
@@ -360,23 +427,22 @@ function formatarETA(minutos) {
   return `${m} min`;
 }
 
-// Cor do velocímetro muda conforme a velocidade (leitura de relance)
-// Verde (< 60), Amarelo (60-89), Vermelho (>= 90)
+// Cor do velocímetro conforme velocidade
 function atualizarCorVelocimetro(kmh) {
   const speedValue = document.querySelector('.speed-value');
   const speedUnit = document.querySelector('.speed-unit');
   if (!speedValue) return;
 
   const cor =
-    kmh >= 90 ? '#ef4444' :   // vermelho
-    kmh >= 60 ? '#f59e0b' :   // amarelo
-                 '#22c55e';   // verde
+    kmh >= 90 ? '#ef4444' :
+    kmh >= 60 ? '#f59e0b' :
+                 '#22c55e';
   speedValue.style.color = cor;
   if (speedUnit) speedUnit.style.color = cor;
   speedValue.style.textShadow = `0 0 12px ${cor}80`;
 }
 
-// Feedback discreto flutuante para erros de GPS/rota
+// Feedback flutuante
 function showFeedback(msg) {
   const existing = document.getElementById('flowpilot-feedback');
   if (existing) existing.remove();
@@ -397,7 +463,6 @@ function showFeedback(msg) {
 
 /* ---------- 7. NAVEGAÇÃO PASSO-A-PASSO + VOZ ---------- */
 
-// Converte a instrução do OSRM em texto amigável em PT-BR
 function instrucaoTexto(step) {
   if (!step) return '';
   const mani = step.maneuver || {};
@@ -433,7 +498,6 @@ function formatarInstrucao(type, modifier, local, distancia) {
   }
 }
 
-// Para "entre na rotatória e ..." usa conjugação específica
 function modifierSub(modifier) {
   const m = {
     'left': 'saia à esquerda',
@@ -460,10 +524,27 @@ function modifierMap(modifier) {
   return m[modifier] || modifier || '';
 }
 
-// Ícone (seta) para a manobra atual
-function iconeManeuver(type, modifier) {
+/* ---- ÍCONE DE MANOBRA DINÂMICO ----
+   Se a instrução/texto contiver "esquerda", mostra seta para a esquerda;
+   se contiver "direita", mostra seta para a direita. Usa o texto gerado
+   para decidir, e recorre ao modifier do OSRM quando não houver texto. */
+function iconeManeuver(type, modifier, texto) {
+  // Fim de rota
   if (type === 'arrive') return '🏁';
   if (type === 'depart') return '⬆️';
+
+  // Prioridade: analisa o texto gerado (mais robusto)
+  const t = (texto || '').toLowerCase();
+  if (t.includes('esquerda:') || t.includes(' à esquerda') || t.includes('esquerda')) {
+    return direcaoDaSeta(t, 'esquerda');
+  }
+  if (t.includes('direita') || t.includes(' à direita')) {
+    return direcaoDaSeta(t, 'direita');
+  }
+  if (t.includes('retorno') || t.includes('inversão') || modifier === 'uturn') return '↩️';
+  if (t.includes('rotatória') || type === 'roundabout' || type === 'rotary') return '🔄';
+
+  // Fallback pelo modifier
   switch (modifier) {
     case 'left': return '⬅️';
     case 'right': return '➡️';
@@ -477,12 +558,30 @@ function iconeManeuver(type, modifier) {
   }
 }
 
+// Escolhe a seta mais específica com base na intensidade da manobra
+function direcaoDaSeta(texto, lado) {
+  const levemente =
+    (lado === 'esquerda' && texto.includes('levemente')) ||
+    (lado === 'direita' && texto.includes('levemente'));
+  const brusco =
+    (lado === 'esquerda' && texto.includes('bruscamente')) ||
+    (lado === 'direita' && texto.includes('bruscamente'));
+
+  if (levemente) return lado === 'esquerda' ? '↖️' : '↗️';
+  if (brusco) return lado === 'esquerda' ? '↙️' : '↘️';
+  return lado === 'esquerda' ? '⬅️' : '➡️';
+}
+
 function exibirInstrucao(index) {
   if (!currentSteps || index >= currentSteps.length) return;
   const step = currentSteps[index];
   const text = instrucaoTexto(step);
   instrTextEl.textContent = text;
-  instrManeuverEl.textContent = iconeManeuver(step.maneuver.type, step.maneuver.modifier);
+  instrManeuverEl.textContent = iconeManeuver(
+    step.maneuver.type,
+    step.maneuver.modifier,
+    text
+  );
   instrDistEl.textContent = 'Próxima manobra: ' + formatarDistancia(curta(step.distance));
   ativarRota();
 }
@@ -491,73 +590,71 @@ function ocultarInstrucao() {
   desativarRota();
 }
 
-// Liga o modo "rota ativa": esconde a busca e mostra a instrução no topo
+/* ---- Controle do modo "rota ativa" (substitui a busca) ---- */
 function ativarRota() {
   rotaAtiva = true;
   document.body.classList.add('rota-ativa');
 }
 
-// Desliga o modo "rota ativa": volta a mostrar a busca
 function desativarRota() {
   rotaAtiva = false;
   document.body.classList.remove('rota-ativa');
+  // Volta a visão de cima ao encerrar a navegação
+  if (map) {
+    map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+  }
 }
 
-// Inicia uma nova rota: limpa a atual, volta à busca e recentraliza no veículo
+// Inicia uma nova rota
 function novaRota() {
-  // Para qualquer fala pendente
   if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 
-  // Limpa a rota do mapa
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    map.removeLayer(routeLayer2);
-    routeLayer = null;
-    routeLayer2 = null;
+  if (sourceRota) {
+    try { map.removeLayer('rota-halo'); } catch (e) {}
+    try { map.removeLayer('rota-linha'); } catch (e) {}
+    try { map.removeSource('rota'); } catch (e) {}
+    sourceRota = null;
   }
 
-  // Reseta estado de navegação
   currentSteps = [];
   currentStepIndex = 0;
   enunciadoPerto.clear();
   destinoSelecionado = null;
 
-  // Volta ETA/distância ao padrão e desativa o modo rota
   etaTimeEl.textContent = '--:--';
   distKmEl.textContent = '0.0 km';
   desativarRota();
-  ocultarInstrucao();
 
-  // Limpa o campo de busca e foca/recentra no veículo
   inputDestino.value = '';
   setFollowMode(true);
   const pos = window.currentCoords;
   if (pos) {
-    map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), 15), { animate: true });
+    map.easeTo({
+      center: [pos.lon, pos.lat],
+      zoom: ZOOM_PARADO,
+      pitch: 0,
+      bearing: 0,
+      duration: 800
+    });
   }
   inputDestino.focus();
 }
 
-// Botão "nova rota" do card de instrução
 btnNovaRota.addEventListener('click', novaRota);
 
-// Atualiza continuamente qual instrução mostrar conforme o veículo avança
+// Atualiza a instrução conforme o veículo avança
 function atualizarInstrucao(origem) {
   if (!currentSteps.length) {
     ocultarInstrucao();
     return;
   }
 
-  // A manobra que queremos anunciar é a do passo seguinte (índice+1)
-  // Enquanto não chegamos nela, mostramos a instrução atual.
   const proxIndex = Math.min(currentStepIndex + 1, currentSteps.length - 1);
   const proxPasso = currentSteps[proxIndex];
   const distAteStep = distanciaOrigemAoStep(proxPasso, origem);
 
-  // Atualiza a distância até a próxima manobra
   instrDistEl.textContent = 'Próxima manobra: ' + formatarDistancia(distAteStep);
 
-  // Quando o veículo chega perto da manobra, avança uma instrução
   if (distAteStep < 30 && proxIndex > currentStepIndex && !enunciadoPerto.has(proxIndex)) {
     enunciadoPerto.add(proxIndex);
     currentStepIndex = proxIndex;
@@ -565,22 +662,19 @@ function atualizarInstrucao(origem) {
       exibirInstrucao(currentStepIndex);
       falarVoz(instrucaoTexto(currentSteps[currentStepIndex]));
     } else {
-      // Último passo = chegada ao destino
       ocultarInstrucao();
       showFeedback('Você chegou ao destino!');
     }
   }
 }
 
-// Distância (em metros) da origem ao ponto de manobra de um step
 function distanciaOrigemAoStep(step, origem) {
   const geo = step.geometry || null;
   if (!geo || !geo.coordinates || !geo.coordinates.length) return Infinity;
-  const c = geo.coordinates[0]; // [lng, lat]
+  const c = geo.coordinates[0];
   return haversine(origem.lat, origem.lon, c[1], c[0]);
 }
 
-// Anuncia uma instrução em voz alta (síntese de fala em pt-BR)
 function falarVoz(texto) {
   if (!('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(texto);
@@ -590,8 +684,6 @@ function falarVoz(texto) {
 }
 
 /* ---------- 8. GEOMETRIA/UTILITÁRIOS ADICIONAIS ---------- */
-
-// Distância de Haversine entre dois pontos (metros)
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = (x) => (x * Math.PI) / 180;
@@ -603,13 +695,11 @@ function haversine(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Formata distância em metros -> "300 m" ou "1.2 km"
 function formatarDistancia(metros) {
   if (metros >= 1000) return (metros / 1000).toFixed(1) + ' km';
   return Math.round(metros) + ' m';
 }
 
-// Distância "limpa" para evitar ruído de GPS (mínimo de 15m)
 function curta(m) {
   return Math.max(15, m);
 }
@@ -617,7 +707,6 @@ function curta(m) {
 /* ---------- 9. DESTINOS RECENTES (persistência) ---------- */
 const CHAVE_RECENTES = 'flowpilot:recentes';
 
-// Lista de recentes: [{nome, lat, lon}] mais recentes primeiro
 function carregarRecentes() {
   try {
     return JSON.parse(localStorage.getItem(CHAVE_RECENTES) || '[]');
@@ -630,7 +719,6 @@ function salvarRecentes(lista) {
   try { localStorage.setItem(CHAVE_RECENTES, JSON.stringify(lista.slice(0, 8))); } catch (e) {}
 }
 
-// Registra um destino usado, deduplicando pelo nome
 function registrarDestinoRecente(dest) {
   if (!dest || !dest.nome) return;
   let lista = carregarRecentes().filter(r => r.nome !== dest.nome);
@@ -638,7 +726,6 @@ function registrarDestinoRecente(dest) {
   salvarRecentes(lista);
 }
 
-// Exibe os recentes quando o campo de busca está vazio e focado
 function exibirRecentes() {
   const lista = carregarRecentes();
   sugestoesEl.innerHTML = '';
@@ -663,14 +750,12 @@ function exibirRecentes() {
   sugestoesEl.classList.add('visivel');
 }
 
-// Escape simples para evitar quebra do HTML
 function escapeHtml(texto) {
   const div = document.createElement('div');
   div.textContent = texto;
   return div.innerHTML;
 }
 
-// Mostra recentes quando o campo está vazio e o usuário foca/clica
 inputDestino.addEventListener('focus', () => {
   if (!inputDestino.value.trim()) exibirRecentes();
 });
