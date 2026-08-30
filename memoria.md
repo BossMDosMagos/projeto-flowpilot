@@ -42,7 +42,7 @@ Arquivos:
 
 ## 3. Estrutura do `app.js`
 
-Organizado em 10 blocos comentados:
+Organizado em 11 blocos comentados:
 
 1. **Estado global + constantes** — variáveis do mapa, rota, navegação e estilos.
 2. **Inicialização do mapa** — `initMap()`, controles, tema salvo, seguimento.
@@ -53,7 +53,8 @@ Organizado em 10 blocos comentados:
 7. **Navegação passo a passo + voz** — instruções OSRM, ícone de manobra, voz.
 8. **Geometria/utilitários adicionais** — haversine, formatação de distância.
 9. **Destinos recentes** — persistência em `localStorage`.
-10. **Simulador de rota** — ver seção 6 (estado: **incompleto**).
+10. **Simulador de rota** — seção 6 (concluído, com acelerador 1x–8x).
+11. **Screen Wake Lock** — seção 11: mantém a tela acesa enquanto `rotaAtiva`.
 
 ---
 
@@ -164,6 +165,8 @@ O último commit efetivo é provavelmente `ab91754` (ver `git log`).
 1. ~~Simulador de rota incompleto (ver seção 6)~~ — **concluído**.
 2. Atribuição da CartoDB/OSM desativada (`attributionControl:false`) — sem conformidade.
 3. GPS real exige **HTTPS** ou `localhost`; simulador resolve testes sem dirigir.
+4. Wake Lock (seção 11) só funciona em HTTPS e depende de suporte do navegador
+   (Chrome 84+, iOS Safari 16.4+); guarda contra falta de suporte já incluída.
 
 ---
 

@@ -18,6 +18,7 @@ let currentStepIndex = 0;    // Índice da instrução atual
 let enunciadoPerto = new Set(); // Passos já anunciados por voz
 let touchManipulado = false; // Se o usuário manipulou o mapa manualmente
 let watchId = null;          // ID do watchPosition (para pausar/retomar o GPS)
+let wakeLock = null;         // Screen Wake Lock ativo (tela não apaga na navegação)
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -723,11 +724,13 @@ function ocultarInstrucao() {
 function ativarRota() {
   rotaAtiva = true;
   document.body.classList.add('rota-ativa');
+  solicitarWakeLock();
 }
 
 function desativarRota() {
   rotaAtiva = false;
   document.body.classList.remove('rota-ativa');
+  liberarWakeLock();
   // Volta a visão de cima ao encerrar a navegação
   if (map) {
     map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
@@ -994,6 +997,31 @@ function pontoNaRota(coords, d) {
   const ult = coords[coords.length - 1];
   return { lat: ult[1], lon: ult[0], heading: lastHeading, fim: true };
 }
+
+/* ---------- 11. SCREEN WAKE LOCK (tela nunca apaga na navegação) ---------- */
+async function solicitarWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  if (wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (e) {
+    console.warn('Wake Lock indisponível:', e);
+  }
+}
+
+function liberarWakeLock() {
+  if (!wakeLock) return;
+  try { wakeLock.release(); } catch (e) {}
+  wakeLock = null;
+}
+
+// O navegador libera o lock ao ocultar a aba; re-adquire ao voltar, se ainda navegando
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && rotaAtiva && !wakeLock) {
+    solicitarWakeLock();
+  }
+});
 
 /* ---------- Inicialização ---------- */
 document.addEventListener('DOMContentLoaded', initMap);
