@@ -491,7 +491,14 @@ body:not(.rota-ativa) #nav-instruction {
 /* Painel de estatísticas da rota */
 .route-stats {
   display: flex;
-  gap: 24px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.route-stats-row {
+  display: flex;
+  gap: 18px;
 }
 
 .stat {
@@ -500,8 +507,8 @@ body:not(.rota-ativa) #nav-instruction {
 
 .stat-label {
   display: block;
-  font-size: 12px;
-  letter-spacing: 1px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
   color: var(--text-secondary);
   font-weight: 600;
   text-transform: uppercase;
@@ -509,10 +516,26 @@ body:not(.rota-ativa) #nav-instruction {
 
 .stat-value {
   display: block;
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 800;
   color: var(--text-primary);
   margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Hora estimada de chegada ocupa a largura do painel de estatísticas */
+.stat-chegada {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding-top: 6px;
+}
+
+.stat-chegada .stat-value {
+  font-size: 22px;
+  color: var(--accent);
 }
 
 /* ============================================

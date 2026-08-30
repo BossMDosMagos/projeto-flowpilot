@@ -9,6 +9,8 @@ let vehicleMarker = null;    // Marcador do veículo (MapLibre Marker)
 let destinoMarker = null;    // Bandeira de chegada no destino (MapLibre Marker)
 let sourceRota = null;       // Fonte GeoJSON da rota
 let currentRouteCoords = null; // Coordenadas da rota ativa (para re-desenho ao trocar tema)
+let currentRouteDistance = 0;  // Distância total da rota ativa (m) — telemetria
+let currentRouteDuration = 0;  // Duração total da rota ativa (s) — telemetria
 let rotaAtiva = false;       // Se há uma rota em andamento (substitui a busca)
 let destinoSelecionado = null; // {lon, lat, nome}
 let followMode = true;       // Se o mapa segue automaticamente o veículo
@@ -34,6 +36,7 @@ const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
 const distKmEl = $('dist-km');
+const chegadaHoraEl = $('chegada-hora');
 const navInstructionEl = $('nav-instruction');
 const instrManeuverEl = $('instr-maneuver');
 const instrTextEl = $('instr-text');
@@ -271,6 +274,9 @@ function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
   // Atualiza a instrução de navegação conforme avança
   atualizarInstrucao(window.currentCoords);
 
+  // Telemetria em tempo real: ETA, distância restante e hora de chegada
+  atualizarTelemetria(window.currentCoords);
+
   // Segue o veículo (com pitch/bearing no modo rota)
   if (followMode) {
     acompanharVeiculo(pos, velocidadeKmh, heading);
@@ -424,6 +430,8 @@ function tracarRota() {
       const minutos = Math.max(1, Math.round(route.duration / 60));
       const km = (route.distance / 1000).toFixed(1);
 
+      currentRouteDistance = route.distance;
+      currentRouteDuration = route.duration;
       registrarDestinoRecente(destinoSelecionado);
 
       etaTimeEl.textContent = formatarETA(minutos);
@@ -432,6 +440,7 @@ function tracarRota() {
       // Ativa o modo rota (perspectiva 3D + rotação)
       ativarRota();
       destacarRota();
+      atualizarTelemetria(window.currentCoords);
     })
     .catch(err => {
       console.error('Erro no OSRM:', err);
@@ -519,6 +528,66 @@ function formatarETA(minutos) {
     return `${h}:${String(m).padStart(2, '0')}`;
   }
   return `${m} min`;
+}
+
+function formatarHora(data) {
+  return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`;
+}
+
+/* ---- TELEMETRIA EM TEMPO REAL ----
+   Recalcula a distância restante ao longo da rota a partir da posição atual e
+   estima a duração restante proporcionalmente ao total (route.duration). */
+function atualizarTelemetria(pos) {
+  if (!pos || pos.lat === undefined || pos.lon === undefined) return;
+  if (!currentRouteCoords || !currentRouteDistance) return;
+
+  const restante = distRestanteRota(pos.lat, pos.lon);
+  const frac = currentRouteDistance > 0 ? Math.max(0, restante / currentRouteDistance) : 1;
+  const durRestante = currentRouteDuration * frac;
+
+  distKmEl.textContent = formatarDistancia(restante);
+  etaTimeEl.textContent = formatarETA(Math.max(0, Math.round(durRestante / 60)));
+  chegadaHoraEl.textContent = formatarHora(new Date(Date.now() + durRestante * 1000));
+}
+
+// Distância (m) que falta percorrer da posição até o fim da rota
+function distRestanteRota(lat, lon) {
+  const coords = currentRouteCoords;
+  if (!coords || coords.length < 2) return 0;
+
+  // Acha o segmento mais próximo da posição atual
+  let melhor = { idx: 0, frac: 0, dist: Infinity };
+  for (let i = 0; i < coords.length - 1; i++) {
+    const proj = projetarPontoNoSegmento(lat, lon, coords[i], coords[i + 1]);
+    if (proj.dist < melhor.dist) melhor = { idx: i, frac: proj.frac, dist: proj.dist };
+  }
+
+  // Soma o restante do segmento atual + todos os seguintes
+  const a = coords[melhor.idx];
+  const b = coords[melhor.idx + 1];
+  let restante = haversine(a[1], a[0], b[1], b[0]) * (1 - melhor.frac);
+  for (let i = melhor.idx + 1; i < coords.length - 1; i++) {
+    restante += haversine(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
+  }
+  return restante;
+}
+
+// Projeta um ponto sobre o segmento [a,b] (coords [lon, lat]) usando
+// projeção equiretangular local (basta para distâncias curtas de segmento).
+function projetarPontoNoSegmento(lat, lon, a, b) {
+  const toRad = (x) => (x * Math.PI) / 180;
+  const M_PER_DEG = 111320;
+  const k = Math.cos(toRad((a[1] + b[1]) / 2));
+  const xa = a[0] * k * M_PER_DEG, ya = a[1] * M_PER_DEG;
+  const xb = b[0] * k * M_PER_DEG, yb = b[1] * M_PER_DEG;
+  const xp = lon * k * M_PER_DEG, yp = lat * M_PER_DEG;
+
+  const dx = xb - xa, dy = yb - ya;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 0 ? ((xp - xa) * dx + (yp - ya) * dy) / len2 : 0;
+  const frac = Math.max(0, Math.min(1, t));
+  const px = xa + dx * frac, py = ya + dy * frac;
+  return { frac, dist: Math.hypot(xp - px, yp - py) };
 }
 
 // Cor do velocímetro conforme velocidade
@@ -794,9 +863,12 @@ function novaRota() {
   enunciadoPerto.clear();
   destinoSelecionado = null;
   removerDestinoMarker();
+  currentRouteDistance = 0;
+  currentRouteDuration = 0;
 
   etaTimeEl.textContent = '--:--';
   distKmEl.textContent = '0.0 km';
+  chegadaHoraEl.textContent = '--:--';
   desativarRota();
 
   inputDestino.value = '';

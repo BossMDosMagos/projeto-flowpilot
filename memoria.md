@@ -81,6 +81,17 @@ usuário digita destino
 - `acompanharVeiculo()`: inclina a câmera (`pitch=50°`) e gira (`bearing=heading`).
 - Zoom automático 17/18 quando em movimento (>5 km/h).
 
+### Telemetria em tempo real (painel inferior)
+- `atualizarTelemetria(pos)` recalcula a cada atualização de posição (GPS **ou**
+  simulador) a **distância restante** ao longo da polilinha, a **duração estimada**
+  restante (proporcional a `route.duration` × fração restante) e a **hora de chegada**
+  (`Date.now() + duração restante` → `HH:MM`, em verde no card).
+- Geometria: `distRestanteRota()` projeta a posição no segmento mais próximo
+  (`projetarPontoNoSegmento()`, projeção equiretangular local) e soma os segmentos
+  seguintes.
+- Layout do card: **ETA** e **DIST* na mesma linha; **Chegada** (hora estimada) numa
+  linha própria abaixo, com divisor.
+
 ---
 
 ## 5. Ícone de manobra dinâmico (setas SVG)
