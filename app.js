@@ -17,6 +17,7 @@ let currentSteps = [];       // Passos da rota atual (com geometrias)
 let currentStepIndex = 0;    // Índice da instrução atual
 let enunciadoPerto = new Set(); // Passos já anunciados por voz
 let touchManipulado = false; // Se o usuário manipulou o mapa manualmente
+let watchId = null;          // ID do watchPosition (para pausar/retomar o GPS)
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,7 @@ const btnIniciar = $('iniciar-rota-btn');
 const btnLocate = $('locate-btn');
 const btnTheme = $('theme-btn');
 const btnNovaRota = $('nova-rota-btn');
+const btnSimul = $('simul-btn');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -183,38 +185,12 @@ function startGPSTracking() {
 
   watchId = navigator.geolocation.watchPosition(
     (position) => {
-      const { latitude, longitude, speed, heading } = position.coords;
-      const pos = [longitude, latitude];
-
-      // Move o marcador do veículo
-      if (vehicleMarker) vehicleMarker.setLngLat(pos);
-
-      const velocidade = (typeof speed === 'number' && !isNaN(speed)) ? speed * 3.6 : 0;
-
-      // Guarda heading para navegação
-      if (typeof heading === 'number' && !isNaN(heading)) lastHeading = heading;
-
-      // Atualiza o velocímetro
-      velocimetroEl.textContent = Math.round(velocidade);
-      atualizarCorVelocimetro(Math.round(velocidade));
-
-      // Guarda posição para roteamento
-      window.currentCoords = { lat: latitude, lon: longitude };
-
-      // Atualiza a instrução de navegação conforme avança
-      atualizarInstrucao(window.currentCoords);
-
-      // Segue o veículo (com pitch/bearing no modo rota)
-      if (followMode) {
-        acompanharVeiculo(pos, velocidade, heading);
-      }
-
-      // Zoom automático 17/18 quando em movimento (durante navegação)
-      if (rotaAtiva && followMode && velocidade > 5) {
-        if (map.getZoom() < 17) {
-          map.easeTo({ zoom: Math.min(18, Math.max(map.getZoom(), 17)), duration: 800 });
-        }
-      }
+      atualizarPosicaoVeiculo(
+        position.coords.latitude,
+        position.coords.longitude,
+        (typeof position.coords.speed === 'number' && !isNaN(position.coords.speed)) ? position.coords.speed * 3.6 : 0,
+        position.coords.heading
+      );
     },
     (error) => {
       console.error('Erro de GPS:', error);
@@ -234,6 +210,39 @@ function startGPSTracking() {
     },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
   );
+}
+
+// Atualiza a posição do veículo (usado pelo GPS real e pelo simulador)
+function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
+  const pos = [longitude, latitude];
+
+  // Move o marcador do veículo
+  if (vehicleMarker) vehicleMarker.setLngLat(pos);
+
+  // Guarda heading para navegação
+  if (typeof heading === 'number' && !isNaN(heading)) lastHeading = heading;
+
+  // Atualiza o velocímetro
+  velocimetroEl.textContent = Math.round(velocidadeKmh);
+  atualizarCorVelocimetro(Math.round(velocidadeKmh));
+
+  // Guarda posição para roteamento
+  window.currentCoords = { lat: latitude, lon: longitude };
+
+  // Atualiza a instrução de navegação conforme avança
+  atualizarInstrucao(window.currentCoords);
+
+  // Segue o veículo (com pitch/bearing no modo rota)
+  if (followMode) {
+    acompanharVeiculo(pos, velocidadeKmh, heading);
+  }
+
+  // Zoom automático 17/18 quando em movimento (durante navegação)
+  if (rotaAtiva && followMode && velocidadeKmh > 5) {
+    if (map.getZoom() < 17) {
+      map.easeTo({ zoom: Math.min(18, Math.max(map.getZoom(), 17)), duration: 800 });
+    }
+  }
 }
 
 // Acompanha o veículo com perspectiva 3D e rotação (estilo Waze)
@@ -566,52 +575,129 @@ function modifierMap(modifier) {
   return m[modifier] || modifier || '';
 }
 
-/* ---- ÍCONE DE MANOBRA DINÂMICO ----
-   Se a instrução/texto contiver "esquerda", mostra seta para a esquerda;
-   se contiver "direita", mostra seta para a direita. Usa o texto gerado
-   para decidir, e recorre ao modifier do OSRM quando não houver texto. */
-function iconeManeuver(type, modifier, texto) {
-  // Fim de rota
-  if (type === 'arrive') return '🏁';
-  if (type === 'depart') return '⬆️';
+/* ---- DESCRIÇÃO DA PRÓXIMA AÇÃO (sub-título do card) ----
+   Gera uma frase clara sobre a manobra futura, ex:
+   "Vire à direita em 200 m" ou "Pegue a saída em Avenida Brasil". */
+function descricaoProximaAcao(step, distM) {
+  if (!step) return '';
+  const mani = step.maneuver || {};
+  const type = mani.type;
+  const modifier = mani.modifier;
+  const local = step.name || step.ref || '';
+  const dist = formatarDistancia(Number.isFinite(distM) ? distM : curta(step.distance));
 
-  // Prioridade: analisa o texto gerado (mais robusto)
-  const t = (texto || '').toLowerCase();
-  if (t.includes('esquerda:') || t.includes(' à esquerda') || t.includes('esquerda')) {
-    return direcaoDaSeta(t, 'esquerda');
+  if (type === 'arrive') return `Chegue ao destino em ${dist}`;
+  if (type === 'depart') return `Siga em frente por ${dist}`;
+  if (type === 'roundabout' || type === 'rotary') {
+    return `Pegue a saída${local ? ` em ${local}` : ''} em ${dist}`;
   }
-  if (t.includes('direita') || t.includes(' à direita')) {
-    return direcaoDaSeta(t, 'direita');
-  }
-  if (t.includes('retorno') || t.includes('inversão') || modifier === 'uturn') return '↩️';
-  if (t.includes('rotatória') || type === 'roundabout' || type === 'rotary') return '🔄';
+  if (type === 'merge') return `Entre na estrada em ${dist}`;
 
-  // Fallback pelo modifier
-  switch (modifier) {
-    case 'left': return '⬅️';
-    case 'right': return '➡️';
-    case 'slight left': return '↖️';
-    case 'slight right': return '↗️';
-    case 'sharp left': return '↙️';
-    case 'sharp right': return '↘️';
-    case 'uturn': return '↩️';
-    case 'straight': return '⬆️';
-    default: return '⬆️';
+  const dir = modifierMap(modifier) || (['left', 'right'].includes(modifier) ? `à ${modifier}` : '');
+  if (type === 'turn' && dir) return `Vire ${dir}${local ? ` em ${local}` : ''} em ${dist}`;
+  if (type === 'end of road' && dir) return `No fim da via, vire ${dir} em ${dist}`;
+  if (type === 'fork') return `Mantenha ${dir || 'a direção'} em ${dist}`;
+  if (modifier === 'uturn') return `Faça uma inversão em ${dist}`;
+  if (type === 'continue' || type === 'new name') {
+    return local ? `Continue em ${local} por ${dist}` : `Siga em frente por ${dist}`;
   }
+  return `Continue em ${local || 'frente'} por ${dist}`;
 }
 
-// Escolhe a seta mais específica com base na intensidade da manobra
-function direcaoDaSeta(texto, lado) {
-  const levemente =
-    (lado === 'esquerda' && texto.includes('levemente')) ||
-    (lado === 'direita' && texto.includes('levemente'));
-  const brusco =
-    (lado === 'esquerda' && texto.includes('bruscamente')) ||
-    (lado === 'direita' && texto.includes('bruscamente'));
+/* ---- ÍCONE DE MANOBRA DINÂMICO ----
+   Determina a direção a partir do TEXTO da instrução (gerado do OSRM)
+   e do modifier; aplica uma classe CSS de direção (.maneuver-left,
+   .maneuver-right, etc.) ao elemento e desenha uma seta SVG que
+   rotaciona conforme a manobra (estilo Waze). */
+function atualizarIconeManeuver(step) {
+  const el = instrManeuverEl;
+  if (!step) {
+    el.className = 'instr-maneuver maneuver-straight';
+    el.innerHTML = setaSVG('straight');
+    return;
+  }
 
-  if (levemente) return lado === 'esquerda' ? '↖️' : '↗️';
-  if (brusco) return lado === 'esquerda' ? '↙️' : '↘️';
-  return lado === 'esquerda' ? '⬅️' : '➡️';
+  const mani = step.maneuver || {};
+  const type = mani.type;
+  const modifier = mani.modifier;
+  const texto = instrucaoTexto(step);
+  const t = (texto || '').toLowerCase();
+
+  // Chegada ao destino
+  if (type === 'arrive') {
+    el.className = 'instr-maneuver maneuver-arrive';
+    el.innerHTML = chegadaSVG();
+    return;
+  }
+
+  // Partida / segue em frente
+  if (type === 'depart' || modifier === 'straight' || type === 'new name') {
+    el.className = 'instr-maneuver maneuver-straight';
+    el.innerHTML = setaSVG('straight');
+    return;
+  }
+
+  // Rotatória
+  if (type === 'roundabout' || type === 'rotary' || t.includes('rotatória')) {
+    el.className = 'instr-maneuver maneuver-roundabout';
+    el.innerHTML = rotatoriaSVG();
+    return;
+  }
+
+  // Inversão (seta em U)
+  if (modifier === 'uturn' || t.includes('retorno') || t.includes('inversão')) {
+    el.className = 'instr-maneuver maneuver-uturn';
+    el.innerHTML = uturnSVG();
+    return;
+  }
+
+  // Direção principal (esquerda/direita) pelo texto; intensidade pelo texto/modifier
+  let dir = 'straight';
+  let nivel = '';
+  if (t.includes('esquerda')) { dir = 'left'; }
+  else if (t.includes('direita')) { dir = 'right'; }
+  else {
+    switch (modifier) {
+      case 'left': dir = 'left'; break;
+      case 'right': dir = 'right'; break;
+      case 'slight left': dir = 'left'; nivel = 'slight'; break;
+      case 'slight right': dir = 'right'; nivel = 'slight'; break;
+      case 'sharp left': dir = 'left'; nivel = 'sharp'; break;
+      case 'sharp right': dir = 'right'; nivel = 'sharp'; break;
+      default: dir = 'straight';
+    }
+  }
+
+  // Intensidade detectada no texto gerado
+  if (dir !== 'straight') {
+    if (t.includes('bruscamente')) nivel = 'sharp';
+    else if (t.includes('levemente')) nivel = 'slight';
+  }
+
+  const chave = nivel ? `${nivel}-${dir}` : dir;
+  el.className = `instr-maneuver maneuver-${chave}`;
+  el.innerHTML = setaSVG(chave);
+}
+
+// Setas direcionais em SVG (base aponta para a direita; a CSS rotaciona)
+function setaSVG(dir) {
+  return `<svg class="maneuver-arrow maneuver-arrow-${dir}" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M4 11h13.6l-5.3-5.3L13.6 4.4 21.2 12l-7.6 7.6-1.3-1.3 5.3-5.3H4v-2z"/></svg>`;
+}
+
+function uturnSVG() {
+  return `<svg class="maneuver-arrow maneuver-uturn-ic" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M17 16h3V8a5 5 0 0 0-10 0v11"/><path d="M7 13l-4 3 4 3z"/></svg>`;
+}
+
+function rotatoriaSVG() {
+  return `<svg class="maneuver-arrow maneuver-roundabout-ic" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M12 2a6 6 0 0 0-3.6 10.8A5.9 5.9 0 0 0 6 17v.5h2V17a3.2 3.2 0 0 1 2-3 4.6 4.6 0 0 1-1-2.8A3.9 3.9 0 0 1 12 7.2 3.9 3.9 0 0 1 15.2 11 4.6 4.6 0 0 1 14 13.9a3.2 3.2 0 0 1 2 3v.6h2V17a5.9 5.9 0 0 0-2.4-4.2A6 6 0 0 0 12 2zm0 4a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/><path d="M19 20.5 22 17h-6z"/></svg>`;
+}
+
+function chegadaSVG() {
+  return `<svg class="maneuver-arrow maneuver-arrive-ic" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M4 2v20h2v-9h13l-1.5-5.5L19 2H6V2z"/><path d="M6 5h12l-.8 3H6.8z"/></svg>`;
 }
 
 function exibirInstrucao(index) {
@@ -619,12 +705,12 @@ function exibirInstrucao(index) {
   const step = currentSteps[index];
   const text = instrucaoTexto(step);
   instrTextEl.textContent = text;
-  instrManeuverEl.textContent = iconeManeuver(
-    step.maneuver.type,
-    step.maneuver.modifier,
-    text
-  );
-  instrDistEl.textContent = 'Próxima manobra: ' + formatarDistancia(curta(step.distance));
+  atualizarIconeManeuver(step);
+  // Sub-título: próxima ação (passo seguinte), com distância até ela
+  const prox = currentSteps[index + 1];
+  instrDistEl.textContent = prox
+    ? descricaoProximaAcao(prox, distanciaOrigemAoStep(prox, window.currentCoords))
+    : 'Você chegará ao seu destino';
   ativarRota();
 }
 
@@ -695,7 +781,7 @@ function atualizarInstrucao(origem) {
   const proxPasso = currentSteps[proxIndex];
   const distAteStep = distanciaOrigemAoStep(proxPasso, origem);
 
-  instrDistEl.textContent = 'Próxima manobra: ' + formatarDistancia(distAteStep);
+  instrDistEl.textContent = descricaoProximaAcao(proxPasso, distAteStep);
 
   if (distAteStep < 30 && proxIndex > currentStepIndex && !enunciadoPerto.has(proxIndex)) {
     enunciadoPerto.add(proxIndex);
@@ -801,6 +887,101 @@ function escapeHtml(texto) {
 inputDestino.addEventListener('focus', () => {
   if (!inputDestino.value.trim()) exibirRecentes();
 });
+
+/* ---------- 10. SIMULADOR DE ROTA (testar manobras sem dirigir) ---------- */
+const VEL_SIM = 10;            // Velocidade simulada (km/h)
+const TICK_SIM_MS = 200;       // Intervalo do timer (ms)
+const TICK_SEG = TICK_SIM_MS / 1000;
+let simulAtivo = false;        // Se a simulação está rodando
+let simulTimer = null;         // Timer do setInterval
+let simulDist = 0;             // Distância percorrida na simulação (m)
+
+// Botão flutuante de simulação: alterna iniciar/parar
+btnSimul.addEventListener('click', () => {
+  if (simulAtivo) {
+    pararSimulacao();
+  } else {
+    iniciarSimulacao();
+  }
+});
+
+function iniciarSimulacao() {
+  if (!currentRouteCoords || currentRouteCoords.length < 2) {
+    showFeedback('Trace uma rota antes de simular.');
+    return;
+  }
+  if (!rotaAtiva) ativarRota();
+
+  simulAtivo = true;
+  simulDist = 0;
+  btnSimul.classList.add('ativo');
+
+  // Interrompe o GPS real enquanto simula (evita conflito de posição)
+  if (typeof watchId === 'number') {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  simulTimer = setInterval(avancarSimulacao, TICK_SIM_MS);
+}
+
+function pararSimulacao() {
+  simulAtivo = false;
+  if (simulTimer) {
+    clearInterval(simulTimer);
+    simulTimer = null;
+  }
+  btnSimul.classList.remove('ativo');
+  // Retoma o GPS real para continuar a navegação
+  startGPSTracking();
+}
+
+function avancarSimulacao() {
+  const passoMetros = (VEL_SIM / 3.6) * TICK_SEG;
+  simulDist += passoMetros;
+
+  const p = pontoNaRota(currentRouteCoords, simulDist);
+  atualizarPosicaoVeiculo(p.lat, p.lon, p.fim ? 0 : VEL_SIM, p.heading);
+
+  if (p.fim) {
+    pararSimulacao();
+    showFeedback('Simulação concluída! Você chegou ao destino.');
+  }
+}
+
+// Calcula o rumo (heading) entre dois pontos [lon, lat]
+function calcBearing(a, b) {
+  const toRad = (x) => (x * Math.PI) / 180;
+  const toDeg = (x) => (x * 180) / Math.PI;
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+// Interpola a posição a `d` metros do início da rota (coords [lon, lat])
+function pontoNaRota(coords, d) {
+  let acumulado = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const a = coords[i];
+    const b = coords[i + 1];
+    const seg = haversine(a[1], a[0], b[1], b[0]);
+    if (acumulado + seg >= d) {
+      const f = (seg > 0) ? (d - acumulado) / seg : 0;
+      return {
+        lat: a[1] + (b[1] - a[1]) * f,
+        lon: a[0] + (b[0] - a[0]) * f,
+        heading: calcBearing(a, b),
+        fim: false
+      };
+    }
+    acumulado += seg;
+  }
+  const ult = coords[coords.length - 1];
+  return { lat: ult[1], lon: ult[0], heading: lastHeading, fim: true };
+}
 
 /* ---------- Inicialização ---------- */
 document.addEventListener('DOMContentLoaded', initMap);

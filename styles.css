@@ -243,6 +243,39 @@ body:not(.noturno) #theme-btn .icon-moon { display: block; }
 body.noturno #theme-btn .icon-sun { display: block; }
 body.noturno #theme-btn .icon-moon { display: none; }
 
+/* ============================================
+   BOTÃO FLUTUANTE - SIMULADOR DE ROTA
+   ============================================ */
+#simul-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 270px;
+  z-index: 1000;
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: transform 0.15s, background 0.2s;
+}
+
+#simul-btn:active {
+  transform: scale(0.92);
+}
+
+/* Padrão: ícone de play visível; quando ativo, mostra stop e fundo verde */
+#simul-btn .icon-stop { display: none; }
+#simul-btn.ativo { background: var(--accent); }
+#simul-btn.ativo .icon-play { display: none; }
+#simul-btn.ativo .icon-stop { display: block; }
+
 /* MapLibre: Dark Matter já é escuro por padrão. Ajusta contraste da rota. */
 body.noturno .route-line,
 .route-line {
@@ -302,6 +335,30 @@ body:not(.rota-ativa) #nav-instruction {
   justify-content: center;
   font-size: 28px;
   font-weight: 800;
+}
+
+/* Setas de manobra (SVG) - base aponta para a DIREITA, rotacionada por classe */
+.instr-maneuver .maneuver-arrow {
+  width: 30px;
+  height: 30px;
+  fill: #fff;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.maneuver-straight .maneuver-arrow { transform: rotate(270deg); }  /* cima */
+.maneuver-right    .maneuver-arrow { transform: rotate(0deg); }    /* direita */
+.maneuver-left     .maneuver-arrow { transform: rotate(180deg); }  /* esquerda */
+.maneuver-slight-right .maneuver-arrow { transform: rotate(315deg); } /* diagonal cima-dir */
+.maneuver-slight-left  .maneuver-arrow { transform: rotate(225deg); } /* diagonal cima-esq */
+.maneuver-sharp-right  .maneuver-arrow { transform: rotate(45deg); }  /* diagonal baixo-dir */
+.maneuver-sharp-left   .maneuver-arrow { transform: rotate(135deg); } /* diagonal baixo-esq */
+
+/* Ícones especiais (chegada, rotatória, inversão) */
+.maneuver-arrive .maneuver-arrow,
+.maneuver-roundabout .maneuver-arrow,
+.maneuver-uturn .maneuver-arrow {
+  transform: none;
 }
 
 .instr-text-wrap {
