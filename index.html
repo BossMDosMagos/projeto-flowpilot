@@ -14,6 +14,12 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="theme-color" content="#0f172a">
+
+  <!-- Performance: conexão antecipada para CDNs/APIs usadas -->
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://api.tomtom.com">
+  <link rel="preconnect" href="https://router.project-osrm.org">
+  <link rel="preconnect" href="https://nominatim.openstreetmap.org">
 </head>
 <body>
 
@@ -138,6 +144,11 @@
             <input type="checkbox" id="cfg-tela-ligada" checked>
             <span class="switch-track"><span class="switch-thumb"></span></span>
           </label>
+          <label class="settings-switch">
+            <span>Simulador de rota (botões flutuantes)</span>
+            <input type="checkbox" id="cfg-simulador" checked>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
         </section>
 
         <!-- MANUTENÇÃO / HODÔMETRO -->
@@ -148,6 +159,20 @@
           <label class="settings-field-label" for="cfg-intervalo-oleo">Intervalo de troca de óleo (km)</label>
           <input type="number" id="cfg-intervalo-oleo" class="settings-input" min="0" step="100" inputmode="numeric" placeholder="ex.: 3000">
           <button id="btn-registrar-troca" class="settings-btn primary" type="button">Registrar troca de óleo agora</button>
+        </section>
+
+        <!-- CORRIDA (trabalho de app) -->
+        <section class="settings-section">
+          <h4 class="settings-section-title">Corrida (trabalho de app)</h4>
+          <p class="settings-hint">Fluxo de 2 estágios: Coleta → Viagem, com aviso sonoro a 30 m do ponto. Endereços podem vir dos links de captura (botões abaixo) ou da notificação da 99 no app nativo.</p>
+          <label class="settings-switch">
+            <span>Mini-HUD flutuante (velocidade + manobra + ETA)</span>
+            <input type="checkbox" id="cfg-mini-hud">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+          <button id="btn-copiar-link-coleta" class="settings-btn" type="button">Copiar link de captura (Coleta)</button>
+          <button id="btn-copiar-link-destino" class="settings-btn" type="button">Copiar link de captura (Destino)</button>
+          <p class="settings-hint">Status para a notificação fixa do app nativo:<br><span id="cfg-status-notificacao">—</span></p>
         </section>
 
         <!-- GESTÃO DE DADOS E BACKUP -->
@@ -217,10 +242,36 @@
         <span class="maint-value" id="km-trip">0 km</span>
       </div>
     </div>
+    <div class="maintenance-strip corrida" id="corrida-strip">
+      <button class="corrida-stage" id="corrida-stage" type="button" title="Etapa atual da corrida">Livre</button>
+      <button class="corrida-action" id="corrida-coleta" type="button" title="Informar endereço de coleta">Coleta</button>
+      <button class="corrida-action" id="corrida-destino" type="button" title="Informar endereço de destino">Destino</button>
+      <button class="corrida-action embarcou" id="corrida-transicao" type="button" hidden>Embarcou</button>
+      <button class="corrida-action fim" id="corrida-finalizar" type="button" hidden>Finalizar</button>
+    </div>
+  </div>
+
+  <!-- Mini-HUD flutuante (opcional, nas Configurações) -->
+  <div id="hud-mini" class="hud-mini hidden">
+    <span id="hud-mini-vel" class="hud-mini-vel">0 km/h</span>
+    <div class="hud-mini-info">
+      <span id="hud-mini-maneuver">—</span>
+      <span id="hud-mini-eta">ETA --:-- · 0.0 km</span>
+    </div>
   </div>
 
   <!-- Chave local TomTom (opcional; não versionada) -->
   <script src="config.local.js"></script>
   <script src="app.js"></script>
+  <script>
+    // Service Worker: cache off-line e abertura mais rápida
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) {
+          console.warn('Service Worker falhou:', e);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

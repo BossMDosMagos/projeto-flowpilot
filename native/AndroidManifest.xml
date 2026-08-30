@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FlowPilot — AndroidManifest MODELO (mescle no android/app/src/main/AndroidManifest.xml).
+  Não é o manifest completo: combine com o que o `npx cap add android` gerar.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- GPS em segundo plano + overlay + notificações -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Solicitar acesso às notificações (ler a 99) -->
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <!-- Desenhar por cima de outros apps (widget flutuante) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application>
+
+        <!-- Receber "compartilhar" da 99 / qualquer app: abre com ?coleta= ou ?destino= -->
+        <activity
+            android:name="com.flowpilot.app.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- ACTION_SEND: texto/vínculo compartilhado (ex.: endereço da 99) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- Continua capturando endereço quando o app chegou com o texto incompleto → obj extra -->
+
+        <!-- 3. GPS em segundo plano (foreground com notificação fixa) -->
+        <service
+            android:name="com.flowpilot.app.ForegroundLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- 2. Leitor de notificações da 99 (endereço de coleta/destino) -->
+        <service
+            android:name="com.flowpilot.app.NotificationListenerService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- 4. Overlay flutuante (widget sobre o app da 99) -->
+        <service
+            android:name="com.flowpilot.app.OverlayService"
+            android:enabled="true"
+            android:exported="false" />
+
+    </application>
+</manifest>

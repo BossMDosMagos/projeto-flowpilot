@@ -23,6 +23,8 @@ Arquivos:
 - `styles.css` — tema claro/noturno + UI (velocímetro, card de instrução, botões flutuantes)
 - `app.js` — toda a lógica (mapa, GPS, rota, navegação, voz, tema)
 - `manifest.json` — manifest do PWA
+- `sw.js` — Service Worker (cache offline + abertura rápida)
+- `capacitor.config.json` + `native/` — módulo nativo (Android/Capacitor, ver seção 16)
 
 ---
 
@@ -42,7 +44,7 @@ Arquivos:
 
 ## 3. Estrutura do `app.js`
 
-Organizado em 15 blocos comentados:
+Organizado em 16 blocos comentados:
 
 1. **Estado global + constantes** — variáveis do mapa, rota, navegação e estilos.
 2. **Inicialização do mapa** — `initMap()`, controles, tema salvo, seguimento.
@@ -59,6 +61,7 @@ Organizado em 15 blocos comentados:
 13. **Recálculo anti-engarrafamento** — seção 13: monitor econômico + alerta de nova rota.
 14. **Hodômetro + manutenção** — seção 14: KM cumulativo + status do óleo + modal.
 15. **Central de configurações** — seção 15: veículo/perfil OSRM, custo, alertas de velocidade/voz, AMOLED, wake lock toggle e backup JSON.
+16. **Corrida (trabalho de app) + ponte nativa** — seção 16: máquina de estados de 2 estágios, captura de endereço, proximidade 30 m, mini-HUD, `window.FlowPilot`/`AndroidBridge` (ver seção 16 abaixo).
 
 ---
 
@@ -179,6 +182,7 @@ O último commit efetivo é provavelmente `ab91754` (ver `git log`).
 
 - `flowpilot:tema` — tema claro/escuro.
 - `flowpilot:recentes` — últimos 8 destinos (para republicar na busca).
+- `flowpilot:corrida` — estado da corrida ativa (estado, coleta, destino); ver seção 16.
 
 ---
 
@@ -294,6 +298,8 @@ Viagens/odômetro mantêm as chaves próprias (`flowpilot:tripA`, `flowpilot:tri
   (economia de bateria/sol).
 - **Manter tela ligada**: guard em `solicitarWakeLock()`; desligado libera o lock
   imediatamente.
+- **Simulador**: toggle esconde os botões de simulação (`body.sem-simulador`) e, se
+  ativo, para a simulação em andamento; `iniciarSimulacao()` também é bloqueado.
 
 ### Backup e dados
 - **Exportar/Importar `.json`** (`dadosBackup()`/`aplicarImportacao()`): settings +
@@ -306,3 +312,89 @@ Viagens/odômetro mantêm as chaves próprias (`flowpilot:tripA`, `flowpilot:tri
 - `showFeedback(msg, 'ok')` passa a usar verde (sucesso); sem tipo = vermelho (erro).
 - O botão flutuante antigo de manutenção (`#maint-btn`) foi substituído por
   `#settings-btn` (engrenagem), na trilha direita logo acima do botão de tráfego.
+
+---
+
+## 14. Otimizações de performance e dinamismo
+
+- **`distRestanteRota()` com busca coerente**: em vez de varrer a polilinha inteira a
+  cada tick (O(n)), mantém `rotaBuscaIdxBase` (último segmento) e varre só uma janela de
+  80 segmentos ao redor; a cada 40 ticks faz uma busca completa para reancorar. Âncoras
+  resetadas em `processarRota()`/`novaRota()`.
+- **Batch do localStorage**: `flushOdomSaveLento()` grava odômetro + Trip A/B no máximo
+  1×/5 s (em vez de a cada tick de GPS); flush forçado em `beforeunload`/`visibilitychange
+  hidden`.
+- **Cache de DOM**: refs `speedValueEl`/`speedUnitEl` (evita `querySelector` no tick);
+  HUD também usa refs fixas.
+- **Throttle do follow (câmera)**: `acompanharVeiculo()` só chama `easeTo` quando o
+  veículo andou ≥ 8 m, girou ≥ 5° ou passou 400 ms desde o último ajuste.
+- **`sw.js` (Service Worker)**: cache-first para o app shell (`/`, `index.html`,
+  `styles.css`, `app.js`, `manifest.json`, ícones) com atualização em segundo plano;
+  `config.local.js` (chave TomTom) e recursos de terceiros usam rede primeiro com
+  fallback em cache. Registrado no `load`; versão = `SW_CACHE_VERSION` (bump ao alterar).
+- **`preconnect`** no `<head>` para unpkg, api.tomtom.com, router.project-osrm.org e
+  nominatim.openstreetmap.org.
+
+---
+
+## 15. Corrida (trabalho de app) — 2 estágios (código seção 16)
+
+Fluxo para motoristas de aplicativo: **Livre → Coleta (embarque) → Viagem (destino final)**.
+Estado persistido em `flowpilot:corrida` (`{estado, coleta, destino}`).
+
+### Controles (strip no painel inferior, sempre visível)
+- Linha extra `#corrida-strip` com: chip do **estágio** ("Livre"/"Coleta"/"Viagem",
+  colorido e com pulso ao chegar) e ações contextuais: **[Coleta]** (só Livre) →
+  **[Destino]** (anotar/reroute) + **[Embarcou]** (só Coleta) + **[Finalizar]** (só Viagem).
+- **Coleta**: `prompt` (colar endereço da 99) → geocodificação Nominatim
+  (`geocodificarEndereco`) → estado `embarque` + rota até o ponto.
+- **Destino** (no embarque): anota sem trocar a rota (a rota da coleta continua);
+  **[Embarcou]** → estado `viagem`, limpa rota e traça para o destino (ou pede o destino).
+- **Destino** (na viagem): replaneja a rota. **Finalizar**: confirma, volta a `livre`.
+
+### Proximidade de chegada (30 m)
+`monitorProximidadeCorrida()` (chamado em cada `atualizarPosicaoVeiculo`) compara a posição
+com o alvo da etapa; a < 30 m dispara **triplo bipe + voz** ("Você chegou ao ponto de
+coleta/destino") e põe o chip em pulso; reaproxima a > 50 m para permitir novo disparo.
+
+### Links de captura (`?coleta=&destino=`)
+- Botões "Copiar link de captura" no modal geram
+  `origin+path?coleta=<endereço>`/`?destino=<endereço>`; o boot da seção 16 lê os params
+  e aciona a mesma máquina de estados. É a ponte para o app nativo (ACTION_SEND da 99).
+- Configurações → **Corrida**: toggle do **Mini-HUD flutuante** (velocidade + manobra +
+  ETA, arrastável) e preview de `textoStatusNotificacao()`.
+
+### Ponte JS ↔ nativo
+- `window.FlowPilot.buscarStatus()` expõe `{estado, coleta, destino, kmAtual, kmFaltaOleo,
+  tripA, tripB, rotaAtiva, textoNotificacao}`; `enviarStatusNativo()` manda para
+  `window.AndroidBridge.onStatusChanged` (quando existir) a cada mudança/5 s.
+- `textoStatusNotificacao()` gera: "FlowPilot — EMBARQUE/EM VIAGEM | Odômetro: X km | Óleo:
+  falta Y km" (alimenta a notificação fixa do serviço nativo).
+
+---
+
+## 16. Módulo nativo (Android / Capacitor) — pendente de build
+
+Scaffold em `native/` + `capacitor.config.json` (`appId: com.flowpilot.app`, `webDir: "."`).
+**Não compilado/testado aqui** (máquina atual sem Java/Android SDK). Build na sua máquina:
+
+1. `npx cap init "FlowPilot" "com.flowpilot.app" --web-dir .`
+2. `npx cap add android`; mesclar `native/AndroidManifest.xml` no manifest gerado
+   (permissões `ACCESS_FINE/BACKGROUND_LOCATION`, `FOREGROUND_SERVICE(_LOCATION)`,
+   `POST_NOTIFICATIONS`, `BIND_NOTIFICATION_LISTENER_SERVICE`, `SYSTEM_ALERT_WINDOW`,
+   `WAKE_LOCK`; intent-filter `ACTION_SEND text/plain`; 3 servicios).
+3. Copiar `native/android/**` → `android/app/src/main/java/com/flowpilot/app/` e os
+   `res/layout|drawable` → `res/`. `MainActivity.kt` injeta `AndroidBridge` na WebView
+   e trata `?coleta=/destino=/etapa=`; `ForegroundLocationService` mantém notificação
+   fixa + GPS; `NotificationListenerService` lê as notificações da 99 e injeta endereço;
+   `OverlayService` desenha o widget por cima do app da 99 (necessita
+   `SYSTEM_ALERT_WINDOW`). Detalhes e avisos (pacotes da 99 são heurística) em
+   `native/README.md`.
+
+### Avisos para produção
+- **Acesso à notificação** exige permissão manual do usuário (Android Settings →
+  Acesso especial → Acesso à notificação) e uso legítimo (não ler dados pessoais fora do
+  fluxo de corrida).
+- Overlay exige permissão manual "Sobre outros apps" (`Settings.ACTION_MANAGE_OVERLAY_PERMISSION`).
+- O texto/regras de extração de endereço da 99 (`NotificationListenerService`) são
+  heurística — revisar com o app da 99 atual.

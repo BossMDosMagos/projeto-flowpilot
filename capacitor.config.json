@@ -1,0 +1,11 @@
+{
+  "appId": "com.flowpilot.app",
+  "appName": "FlowPilot",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

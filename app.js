@@ -59,6 +59,8 @@ let settings = {
   freqVoz: 'completa',        // completa | minima
   amoled: false,              // fundos #000 puro (bateria OLED)
   manterTelaLigada: true,     // Screen Wake Lock
+  simulador: true,            // botões de simulação visíveis/ativos
+  hud: false,                 // Mini-HUD flutuante (velocidade + manobra + ETA)
   tripAtiva: 'A'              // Trip exibida no strip (A | B)
 };
 let tripAKm = 0;              // KM da viagem Trip A
@@ -66,6 +68,16 @@ let tripBKm = 0;              // KM da viagem Trip B
 let ultimaVelocidade = 0;     // Última velocidade exibida (p/ re-render de alerta)
 let velocidadeLimiteOk = true; // Controle do bipe: dispara na subida do limite
 let ctxAudio = null;          // Contexto WebAudio para o bipe
+
+// Cache de performance (evita querySelector/loops por tick)
+let speedValueEl = null;      // .speed-value
+let speedUnitEl = null;       // .speed-unit
+let ultimoSaveOdom = 0;       // Acumula gravações do hodômetro (batch 5 s)
+let rotaBuscaIdxBase = 0;     // Âncora da busca coerente em distRestanteRota
+let rotaBuscaContador = 0;
+let ultimoFollowPos = null;   // Throttle do follow (evita easeTo por tick)
+let ultimoFollowBearing = null;
+let ultimoFollowT = 0;
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -98,6 +110,7 @@ const cfgVelMax = $('cfg-vel-max');
 const cfgFreqVoz = $('cfg-freq-voz');
 const cfgAmoled = $('cfg-amoled');
 const cfgTelaLigada = $('cfg-tela-ligada');
+const cfgSimulador = $('cfg-simulador');
 const cfgTripAValor = $('cfg-trip-a-valor');
 const cfgTripBValor = $('cfg-trip-b-valor');
 const btnExportar = $('btn-exportar');
@@ -105,6 +118,23 @@ const btnImportar = $('btn-importar');
 const cfgArquivoImport = $('cfg-arquivo-import');
 const btnResetTripA = $('btn-reset-trip-a');
 const btnResetTripB = $('btn-reset-trip-b');
+const btnCorridaStage = $('corrida-stage');
+const btnCorridaColeta = $('corrida-coleta');
+const btnCorridaDestino = $('corrida-destino');
+const btnCorridaTransicao = $('corrida-transicao');
+const btnCorridaFinalizar = $('corrida-finalizar');
+const hudMiniEl = $('hud-mini');
+const hudMiniVel = $('hud-mini-vel');
+const hudMiniManeuver = $('hud-mini-maneuver');
+const hudMiniEta = $('hud-mini-eta');
+const cfgMiniHud = $('cfg-mini-hud');
+const btnCopiarLinkColeta = $('btn-copiar-link-coleta');
+const btnCopiarLinkDestino = $('btn-copiar-link-destino');
+const cfgStatusNotificacao = $('cfg-status-notificacao');
+
+// Cache de nós do velocímetro (classe, usada por atualizarCorVelocimetro)
+speedValueEl = document.querySelector('.speed-value');
+speedUnitEl = document.querySelector('.speed-unit');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -389,11 +419,29 @@ function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
       map.easeTo({ zoom: Math.min(18, Math.max(map.getZoom(), 17)), duration: 800 });
     }
   }
+
+  // Mini-HUD + proximidade da corrida (chegam ao ponto a 30 m)
+  atualizarMiniHUD();
+  monitorProximidadeCorrida({ lat: latitude, lon: longitude });
 }
 
 // Acompanha o veículo com perspectiva 3D e rotação (estilo Waze)
+// Throttle: só chama easeTo quando o veículo andou >= 8 m, girou >= 5° ou
+// passou 400 ms desde a última atualização (evita churn de câmera por tick).
 function acompanharVeiculo(pos, velocidade, heading) {
   if (!map) return;
+
+  const agora = performance.now();
+  const d = ultimoFollowPos
+    ? haversine(ultimoFollowPos.lat, ultimoFollowPos.lon, pos[1], pos[0]) : Infinity;
+  const curvaOk = ultimoFollowBearing === null ||
+    typeof heading !== 'number' || isNaN(heading) ||
+    Math.abs(ultimoFollowBearing - heading) < 5;
+  if (d < 8 && curvaOk && agora - ultimoFollowT < 400) return;
+
+  ultimoFollowPos = { lat: pos[1], lon: pos[0] };
+  ultimoFollowBearing = heading;
+  ultimoFollowT = agora;
 
   const opcoes = {
     center: pos,
@@ -543,6 +591,8 @@ function processarRota(route) {
 
   currentRouteDistance = route.distance;
   currentRouteDuration = route.duration;
+  rotaBuscaIdxBase = 0;
+  rotaBuscaContador = 0;
   registrarDestinoRecente(destinoSelecionado);
 
   etaTimeEl.textContent = formatarETA(minutos);
@@ -658,18 +708,26 @@ function atualizarTelemetria(pos) {
 }
 
 // Distância (m) que falta percorrer da posição até o fim da rota
+// Busca COERENTE: varre uma janela ao redor do último segmento (quase O(1));
+// a cada 40 ticks faz uma busca completa para reancorar (trocas de rota/recálculo).
 function distRestanteRota(lat, lon) {
   const coords = currentRouteCoords;
   if (!coords || coords.length < 2) return 0;
 
-  // Acha o segmento mais próximo da posição atual
-  let melhor = { idx: 0, frac: 0, dist: Infinity };
-  for (let i = 0; i < coords.length - 1; i++) {
+  const n = coords.length;
+  const full = rotaBuscaContador++ % 40 === 0;
+  const ini = Math.max(0, Math.min(rotaBuscaIdxBase, n - 2));
+  const fim = Math.min(n - 1, ini + 80);
+  const i0 = full ? 0 : ini;
+  const i1 = full ? n - 1 : fim;
+
+  let melhor = { idx: rotaBuscaIdxBase, frac: 0, dist: Infinity };
+  for (let i = i0; i < i1; i++) {
     const proj = projetarPontoNoSegmento(lat, lon, coords[i], coords[i + 1]);
     if (proj.dist < melhor.dist) melhor = { idx: i, frac: proj.frac, dist: proj.dist };
   }
+  rotaBuscaIdxBase = Math.max(0, melhor.idx);
 
-  // Soma o restante do segmento atual + todos os seguintes
   const a = coords[melhor.idx];
   const b = coords[melhor.idx + 1];
   let restante = haversine(a[1], a[0], b[1], b[0]) * (1 - melhor.frac);
@@ -699,9 +757,7 @@ function projetarPontoNoSegmento(lat, lon, a, b) {
 
 // Cor do velocímetro conforme velocidade (+ alerta de velocidade máxima com bipe)
 function atualizarCorVelocimetro(kmh) {
-  const speedValue = document.querySelector('.speed-value');
-  const speedUnit = document.querySelector('.speed-unit');
-  if (!speedValue) return;
+  if (!speedValueEl) return;
 
   let cor;
   if (settings.velMaxima > 0 && kmh > settings.velMaxima) {
@@ -718,9 +774,9 @@ function atualizarCorVelocimetro(kmh) {
       kmh >= 60 ? '#f59e0b' :
                    '#22c55e';
   }
-  speedValue.style.color = cor;
-  if (speedUnit) speedUnit.style.color = cor;
-  speedValue.style.textShadow = `0 0 12px ${cor}80`;
+  speedValueEl.style.color = cor;
+  if (speedUnitEl) speedUnitEl.style.color = cor;
+  speedValueEl.style.textShadow = `0 0 12px ${cor}80`;
 }
 
 // Feedback flutuante (tipo 'ok' = verde; padrão = vermelho/erro)
@@ -985,6 +1041,8 @@ function novaRota() {
   removerDestinoMarker();
   currentRouteDistance = 0;
   currentRouteDuration = 0;
+  rotaBuscaIdxBase = 0;
+  rotaBuscaContador = 0;
 
   // Reset do monitor anti-engarrafamento
   fecharAlerta();
@@ -1176,6 +1234,7 @@ btnSimul.addEventListener('click', () => {
 });
 
 function iniciarSimulacao() {
+  if (!settings.simulador) return; // simulador desativado nas configurações
   if (!currentRouteCoords || currentRouteCoords.length < 2) {
     showFeedback('Trace uma rota antes de simular.');
     return;
@@ -1540,14 +1599,30 @@ function acumularHodometro(latitude, longitude, velocidadeKmh) {
       kmAtualVeiculo += d;
       tripAKm += d;
       tripBKm += d;
-      salvarKmAtual();
-      salvarTripA();
-      salvarTripB();
+      flushOdomSaveLento(false);
     }
   }
   odomPosAnterior = { lat: latitude, lon: longitude };
   atualizarPainelManutencao();
 }
+
+// Grava odômetro/trips em lote (máx. 1 gravação a cada 5 s) para poupar
+// acesso ao armazenamento em cada tick de GPS; força na saída da página.
+function flushOdomSaveLento(force) {
+  const agora = Date.now();
+  if (force || agora - ultimoSaveOdom >= 5000) {
+    ultimoSaveOdom = agora;
+    salvarKmAtual();
+    salvarTripA();
+    salvarTripB();
+    enviarStatusNativo();
+  }
+}
+
+window.addEventListener('beforeunload', () => flushOdomSaveLento(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushOdomSaveLento(true);
+});
 
 // Atualiza o strip: odômetro total + óleo + Trip A (amarelo <10% / vermelho)
 function atualizarPainelManutencao() {
@@ -1644,8 +1719,11 @@ function salvarTripB() {
 // Reflete as configurações na interface (tema AMOLED, velocímetro, custo)
 function aplicarSettings() {
   document.documentElement.classList.toggle('amoled', !!settings.amoled);
+  document.body.classList.toggle('sem-simulador', !settings.simulador);
+  if (hudMiniEl) hudMiniEl.classList.toggle('hidden', !settings.hud);
   atualizarCorVelocimetro(ultimaVelocidade);
   if (window.currentCoords) atualizarTelemetria(window.currentCoords);
+  atualizarMiniHUD();
 }
 
 // Preenche os campos do modal com o estado atual
@@ -1657,6 +1735,8 @@ function preencherModalConfig() {
   cfgFreqVoz.value = settings.freqVoz;
   cfgAmoled.checked = !!settings.amoled;
   cfgTelaLigada.checked = !!settings.manterTelaLigada;
+  cfgSimulador.checked = !!settings.simulador;
+  cfgMiniHud.checked = !!settings.hud;
   cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
   cfgIntervalo.value = intervaloTrocaOleo || '';
   if (cfgTripAValor) cfgTripAValor.textContent = 'A: ' + fmtKm(tripAKm);
@@ -1727,6 +1807,45 @@ cfgTelaLigada.addEventListener('change', () => {
     liberarWakeLock();
   }
 });
+
+cfgSimulador.addEventListener('change', () => {
+  settings.simulador = cfgSimulador.checked;
+  salvarSettings();
+  if (!settings.simulador && simulAtivo) pararSimulacao();
+  aplicarSettings();
+});
+
+/* ---- Corrida (mini-HUD) ---- */
+cfgMiniHud.addEventListener('change', () => {
+  settings.hud = cfgMiniHud.checked;
+  salvarSettings();
+  aplicarSettings();
+});
+
+/* ---- Links de captura de endereço (navegador) ---- */
+function copiarLinkCaptura(tipo) {
+  const endereco = window.prompt('Endereço de ' + tipo + ' para o link de captura:');
+  if (!endereco) return;
+  const url = location.origin + location.pathname + '?' + tipo + '=' + encodeURIComponent(endereco.trim());
+  const okFinal = () => showFeedback('Link de ' + tipo + ' copiado!', 'ok');
+  const legado = () => {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, 99999);
+    try { document.execCommand('copy'); okFinal(); } catch (e) {}
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(okFinal).catch(legado);
+  } else {
+    legado();
+  }
+}
+
+btnCopiarLinkColeta.addEventListener('click', () => copiarLinkCaptura('coleta'));
+btnCopiarLinkDestino.addEventListener('click', () => copiarLinkCaptura('destino'));
 
 /* ---- Manutenção / hodômetro ---- */
 cfgKmAtual.addEventListener('change', () => {
@@ -1906,6 +2025,301 @@ carregarSettings();
 carregarHodometro();
 aplicarSettings();
 atualizarPainelManutencao();
+
+/* ---------- 16. CORRIDA (trabalho de app) + PONTE NATIVA ---------- */
+// Fluxo de 2 estágios: Livre → Coleta (embarque) → Viagem (destino final)
+// Estados: 'livre' | 'embarque' | 'viagem'
+const CHAVE_CORRIDA = 'flowpilot:corrida';
+const RAIO_CHEGADA_M = 30;
+const ROTULO_ESTADO = { livre: 'Livre', embarque: 'Coleta', viagem: 'Viagem' };
+let corrida = { estado: 'livre', coleta: null, destino: null };
+let proximidadeAlertas = { coleta: false, destino: false };
+
+function salvarCorrida() {
+  try { localStorage.setItem(CHAVE_CORRIDA, JSON.stringify(corrida)); } catch (e) {}
+}
+
+function carregarCorrida() {
+  try {
+    const raw = localStorage.getItem(CHAVE_CORRIDA);
+    if (raw) corrida = Object.assign({ estado: 'livre', coleta: null, destino: null }, JSON.parse(raw));
+  } catch (e) {}
+}
+
+// Ponto de interesse da etapa atual (coleta no embarque; destino na viagem)
+function alvoCorrida() {
+  if (corrida.estado === 'embarque') return corrida.coleta;
+  if (corrida.estado === 'viagem') return corrida.destino;
+  return null;
+}
+
+// Pintar a linha de corrida no painel inferior
+function aplicarCorridaUI() {
+  const estado = corrida.estado;
+  btnCorridaStage.textContent = ROTULO_ESTADO[estado];
+  btnCorridaStage.classList.toggle('embarque', estado === 'embarque');
+  btnCorridaStage.classList.toggle('viagem', estado === 'viagem');
+  btnCorridaStage.classList.remove('pulso');
+  btnCorridaColeta.hidden = estado !== 'livre';
+  btnCorridaDestino.hidden = estado === 'livre';
+  btnCorridaTransicao.hidden = estado !== 'embarque';
+  btnCorridaFinalizar.hidden = estado !== 'viagem';
+  atualizarPreviewNotificacao();
+  enviarStatusNativo();
+}
+
+// Geocodificação única via Nominatim (retorna o 1º resultado)
+function geocodificarEndereco(endereco) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endereco)}&limit=1&countrycodes=br`;
+  return fetch(url)
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(lista => {
+      if (!lista || !lista.length) return null;
+      const r = lista[0];
+      return { nome: r.display_name || endereco, lat: parseFloat(r.lat), lon: parseFloat(r.lon) };
+    });
+}
+
+// Traça a rota até um ponto usando o mecanismo padrão do app
+function corridaCriarRotaAte(ponto) {
+  destinoSelecionado = { lon: ponto.lon, lat: ponto.lat, nome: ponto.nome };
+  inputDestino.value = ponto.nome;
+  tracarRota();
+}
+
+// Define endereço de coleta/destino (prompt, link de captura ou nativo)
+function corridaSetEndereco(tipo, endereco) {
+  endereco = (endereco || '').trim();
+  if (!endereco) {
+    showFeedback(tipo === 'coleta' ? 'Informe o endereço da coleta.' : 'Informe o endereço do destino.');
+    return;
+  }
+  showFeedback('Localizando "' + endereco.slice(0, 40) + '"...');
+  geocodificarEndereco(endereco)
+    .then(ponto => {
+      if (!ponto) {
+        showFeedback('Endereço não encontrado. Tente ser mais específico.');
+        return;
+      }
+      const estadoAnterior = corrida.estado;
+      corrida[tipo] = { nome: ponto.nome, lat: ponto.lat, lon: ponto.lon };
+      if (tipo === 'coleta') corrida.estado = 'embarque';
+      else if (estadoAnterior === 'livre') corrida.estado = 'viagem';
+      salvarCorrida();
+
+      const replanejar = tipo === 'coleta' ||
+        (tipo === 'destino' && corrida.estado === 'viagem');
+      if (replanejar) {
+        corridaCriarRotaAte(corrida[tipo]);
+      } else {
+        showFeedback('Destino anotado: ' + ponto.nome.split(',')[0], 'ok');
+      }
+      aplicarCorridaUI();
+    })
+    .catch(() => showFeedback('Falha ao localizar o endereço.'));
+}
+
+function corridaEmbarcou() {
+  corrida.estado = 'viagem';
+  salvarCorrida();
+  novaRota();
+  if (corrida.destino) {
+    corridaCriarRotaAte(corrida.destino);
+    falarVoz('Embarque confirmado. Rota para o destino.');
+  } else {
+    showFeedback('Informe o endereço do destino para seguir.', 'ok');
+    btnCorridaDestino.focus();
+  }
+  aplicarCorridaUI();
+}
+
+function corridaFinalizar() {
+  if (!window.confirm('Finalizar a corrida atual?')) return;
+  corrida.estado = 'livre';
+  corrida.coleta = null;
+  corrida.destino = null;
+  proximidadeAlertas.coleta = false;
+  proximidadeAlertas.destino = false;
+  salvarCorrida();
+  novaRota();
+  aplicarCorridaUI();
+  showFeedback('Corrida finalizada.', 'ok');
+}
+
+// Aviso sonoro ao chegar a 30 m do ponto da etapa (coleta/destino)
+function monitorProximidadeCorrida(pos) {
+  if (!pos || pos.lat === undefined) return;
+  const alvo = alvoCorrida();
+  if (!alvo) return;
+  const d = haversine(pos.lat, pos.lon, alvo.lat, alvo.lon);
+  const flag = corrida.estado === 'embarque' ? 'coleta' : 'destino';
+
+  if (d <= RAIO_CHEGADA_M && !proximidadeAlertas[flag]) {
+    proximidadeAlertas[flag] = true;
+    const ehColeta = corrida.estado === 'embarque';
+    bipAlerta(); bipAlerta(); bipAlerta();
+    falarVoz(ehColeta
+      ? 'Você chegou ao ponto de coleta. Confirme o embarque do passageiro.'
+      : 'Você chegou ao destino final. Corrida concluída.');
+    btnCorridaStage.classList.add('pulso');
+    showFeedback('A até 30 m do ' + (ehColeta ? 'ponto de coleta' : 'destino') + '!', 'ok');
+    enviarStatusNativo();
+  } else if (d > RAIO_CHEGADA_M + 20 && proximidadeAlertas[flag]) {
+    proximidadeAlertas[flag] = false;
+    btnCorridaStage.classList.remove('pulso');
+  }
+}
+
+/* ---- Mini-HUD flutuante ---- */
+let hudArrastando = false;
+let hudOffX = 0;
+let hudOffY = 0;
+
+function atualizarMiniHUD() {
+  if (!hudMiniEl || settings.hud !== true || hudMiniEl.classList.contains('hidden')) return;
+  hudMiniVel.textContent = (ultimaVelocidade || 0) + ' km/h';
+  const manobra = instrTextEl ? instrTextEl.textContent : '';
+  hudMiniManeuver.textContent = manobra || (rotaAtiva ? 'Siga a rota' : '—');
+  hudMiniEta.textContent = rotaAtiva
+    ? 'ETA ' + etaTimeEl.textContent + ' · ' + distKmEl.textContent
+    : 'ETA --:-- · 0.0 km';
+}
+
+function initHudDrag() {
+  if (!hudMiniEl) return;
+  let rafPendente = false;
+
+  function comeca(e) {
+    hudArrastando = true;
+    const t = e.touches ? e.touches[0] : e;
+    const r = hudMiniEl.getBoundingClientRect();
+    hudOffX = t.clientX - r.left;
+    hudOffY = t.clientY - r.top;
+    hudMiniEl.style.transition = 'none';
+  }
+  function move(e) {
+    if (!hudArrastando) return;
+    const t = e.touches ? e.touches[0] : e;
+    if (rafPendente) return;
+    rafPendente = true;
+    requestAnimationFrame(() => {
+      rafPendente = false;
+      const x = Math.max(4, Math.min(window.innerWidth - hudMiniEl.offsetWidth - 4, t.clientX - hudOffX));
+      const y = Math.max(4, Math.min(window.innerHeight - hudMiniEl.offsetHeight - 4, t.clientY - hudOffY));
+      hudMiniEl.style.left = x + 'px';
+      hudMiniEl.style.top = y + 'px';
+      hudMiniEl.style.right = 'auto';
+      hudMiniEl.style.bottom = 'auto';
+    });
+  }
+  function termina() {
+    hudArrastando = false;
+    hudMiniEl.style.transition = '';
+  }
+  hudMiniEl.addEventListener('pointerdown', comeca);
+  window.addEventListener('pointermove', move, { passive: true });
+  window.addEventListener('pointerup', termina);
+  window.addEventListener('pointercancel', termina);
+}
+
+/* ---- Status para a notificação fixa do app nativo ---- */
+function intervaloTrocaConfigurado() {
+  return intervaloTrocaOleo > 0 && isFinite(intervaloTrocaOleo);
+}
+
+function textoStatusNotificacao() {
+  const estadoTxt = corrida.estado === 'embarque' ? 'EMBARQUE'
+    : corrida.estado === 'viagem' ? 'EM VIAGEM' : 'LIVRE';
+  let oleo;
+  if (intervaloTrocaConfigurado()) {
+    const falta = intervaloTrocaOleo - (kmAtualVeiculo - kmUltimaTrocaOleo);
+    oleo = falta <= 0
+      ? 'trocar óleo AGORA'
+      : 'óleo: falta ' + Math.round(falta).toLocaleString('pt-BR') + ' km';
+  } else {
+    oleo = 'óleo: intervalo não configurado';
+  }
+  const km = Math.round(kmAtualVeiculo).toLocaleString('pt-BR') + ' km';
+  return 'FlowPilot — ' + estadoTxt + ' | Odômetro: ' + km + ' | ' + oleo;
+}
+
+function atualizarPreviewNotificacao() {
+  if (cfgStatusNotificacao) cfgStatusNotificacao.textContent = textoStatusNotificacao();
+}
+
+/* ---- Ponte JS ↔ Android (consome window.AndroidBridge do app nativo) ---- */
+function enviarStatusNativo() {
+  if (window.FlowPilot && window.AndroidBridge && typeof window.AndroidBridge.onStatusChanged === 'function') {
+    try {
+      window.AndroidBridge.onStatusChanged(JSON.stringify(window.FlowPilot.buscarStatus()));
+    } catch (e) {}
+  }
+}
+
+window.FlowPilot = {
+  // "pequeno" módulo exposto para o app nativo (Capacitor/WebView)
+  buscarStatus: function () {
+    let falta = null;
+    if (intervaloTrocaConfigurado()) {
+      falta = Math.max(0, intervaloTrocaOleo - (kmAtualVeiculo - kmUltimaTrocaOleo));
+    }
+    return {
+      estado: corrida.estado,
+      estadoRotulo: ROTULO_ESTADO[corrida.estado],
+      coleta: corrida.coleta,
+      destino: corrida.destino,
+      kmAtual: isFinite(kmAtualVeiculo) ? kmAtualVeiculo : 0,
+      kmFaltaOleo: falta,
+      tripA: isFinite(tripAKm) ? tripAKm : 0,
+      tripB: isFinite(tripBKm) ? tripBKm : 0,
+      rotaAtiva: !!rotaAtiva,
+      textoNotificacao: textoStatusNotificacao()
+    };
+  },
+  setEnderecoColeta: function (endereco) { corridaSetEndereco('coleta', endereco); },
+  setEnderecoDestino: function (endereco) { corridaSetEndereco('destino', endereco); },
+  embarcou: function () { corridaEmbarcou(); },
+  finalizar: function () { corridaFinalizar(); },
+  proximidadeEvento: null
+};
+
+/* ---- Ligações dos controles da corrida ---- */
+btnCorridaColeta.addEventListener('click', () => {
+  const v = window.prompt('Endereço de coleta (cole o endereço da 99):');
+  if (v === null) return;
+  corridaSetEndereco('coleta', v);
+});
+
+btnCorridaDestino.addEventListener('click', () => {
+  const v = window.prompt('Endereço de destino (cole da 99):');
+  if (v === null) return;
+  corridaSetEndereco('destino', v);
+});
+
+btnCorridaTransicao.addEventListener('click', corridaEmbarcou);
+btnCorridaFinalizar.addEventListener('click', corridaFinalizar);
+
+// Dispara a cada aproximação (para o app nativo reagir / overlay)
+setInterval(() => {
+  if (window.FlowPilot.proximidadeEvento && alvoCorrida()) {
+    try { window.FlowPilot.proximidadeEvento(alvoCorrida()); } catch (e) {}
+  }
+}, 5000);
+
+// Boot da corrida: restaura estado + lê links de captura (?coleta=&destino=)
+(function bootCorrida() {
+  carregarCorrida();
+  aplicarCorridaUI();
+  initHudDrag();
+  const params = new URLSearchParams(location.search);
+  const c = params.get('coleta');
+  const d = params.get('destino');
+  if (c) corridaSetEndereco('coleta', c);
+  if (d) corridaSetEndereco('destino', d);
+})();
 
 /* ---------- Inicialização ---------- */
 document.addEventListener('DOMContentLoaded', initMap);
