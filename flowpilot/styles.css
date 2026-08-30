@@ -1,0 +1,216 @@
+/* FlowPilot - Dark Mode Navigation PWA */
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --accent: #10b981;
+  --text-primary: #fff;
+  --text-secondary: #cbd5e1;
+  --text-mute: #64748b;
+}
+
+/* Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Map Container - Absolute fullscreen, z-index 1 */
+#map {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+}
+
+/* Top Maneuver Header - Fixed, z-index 10 */
+.header-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  z-index: 10;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.maneuver-icon {
+  width: 48px;
+  height: 48px;
+  background: #1e293b;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.maneuver-info {
+  flex: 1;
+  text-align: left;
+  color: #fff;
+}
+
+.maneuver-distance {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.maneuver-street {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  margin-top: 2px;
+}
+
+/* Bottom Telemetry Footer - Fixed, z-index 10 */
+.footer-fixed {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  z-index: 10;
+  background: #0f172a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  border-top: 1px solid #1e293b;
+}
+
+.speedometer {
+  text-align: left;
+  flex: 1;
+}
+
+.speed-value {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #10b981;
+}
+
+.route-panel {
+  text-align: right;
+  flex: 1;
+  padding-right: 20px;
+  color: #fff;
+}
+
+.eta {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.distance {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.time-remaining {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Floating Menu - Fixed top, z-index 20 */
+.floating-menu {
+  position: fixed;
+  top: 90px;
+  left: 16px;
+  z-index: 20;
+  background: rgba(15, 23, 42, 0.95);
+  width: 300px;
+  padding: 16px;
+  border-radius: 12px;
+  display: none;
+}
+
+.floating-menu.visible {
+  display: block;
+}
+
+.address-search {
+  width: 100%;
+  padding: 12px 16px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  margin-bottom: 12px;
+}
+
+.address-search::placeholder {
+  color: #64748b;
+}
+
+.address-suggestions {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+}
+
+.address-suggestions div {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.address-suggestions div:hover {
+  background: #059669;
+  color: #fff;
+}
+
+.start-route-btn {
+  width: 100%;
+  padding: 12px;
+  background: #059669;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: opacity 0.2s;
+}
+
+.start-route-btn:hover {
+  opacity: 0.9;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}

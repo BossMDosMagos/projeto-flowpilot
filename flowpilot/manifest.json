@@ -1,0 +1,17 @@
+{
+  "name": "FlowPilot",
+  "short_name": "FlowPilot",
+  "description": "PWA de navegação GPS minimalista",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#00ffaa",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/npm/@tabler/icons@2.51.0/fonts/tabler-icons.css",
+      "sizes": "192x192",
+      "type": "font"
+    }
+  ]
+}
