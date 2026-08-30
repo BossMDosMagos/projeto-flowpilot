@@ -32,11 +32,13 @@ function initMap() {
   });
 
   // Camada de tiles - CartoDB Positron (muted/limpo)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  // endereço estável e sem API key, compatível com desktop e mobile
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO',
     subdomains: 'abcd',
     maxZoom: 19,
-    maxNativeZoom: 19
+    maxNativeZoom: 19,
+    detectRetina: false
   }).addTo(map);
 
   // Criar marcador do veículo (posição inicial padrão)
