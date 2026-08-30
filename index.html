@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>FlowPilot - Navegação GPS</title>
 
   <!-- Leaflet.js CSS e JS via CDN -->
@@ -27,6 +27,33 @@
       <button id="iniciar-rota-btn" type="button">Iniciar Rota</button>
     </div>
     <div id="sugestoes" class="sugestoes"></div>
+  </div>
+
+  <!-- Botão flutuante: centralizar no veículo -->
+  <button id="locate-btn" type="button" aria-label="Centralizar no veículo" title="Centralizar no veículo">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9.5 3a9.9 9.9 0 0 0-8.5-8.5V1h-2v1.5A9.9 9.9 0 0 0 2.5 11H1v2h1.5A9.9 9.9 0 0 0 11 21.5V23h2v-1.5A9.9 9.9 0 0 0 21.5 13H23v-2h-1.5zM12 19.5A7.5 7.5 0 1 1 12 4.5a7.5 7.5 0 0 1 0 15z"/>
+    </svg>
+    <span class="locate-pulse"></span>
+  </button>
+
+  <!-- Botão flutuante: alternar modo noturno -->
+  <button id="theme-btn" type="button" aria-label="Alternar modo noturno" title="Alternar modo noturno">
+    <svg class="icon-sun" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+      <path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 1.5A3.5 3.5 0 1 1 12 15.5 3.5 3.5 0 0 1 12 8.5zM2 11h3v2H2zM19 11h3v2h-3zM11 2h2v3h-2zM11 19h2v3h-2zM4.2 4.2l2.1 2.1-1.4 1.4-2.1-2.1zM17.8 17.8l2.1 2.1-1.4 1.4-2.1-2.1zM19.8 4.2l-2.1 2.1-1.4-1.4 2.1-2.1zM6.3 17.7l-2.1 2.1-1.4-1.4 2.1-2.1z"/>
+    </svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+      <path d="M20.6 13.4A8 8 0 0 1 10.6 3.4a8 8 0 1 0 10 10z"/>
+    </svg>
+  </button>
+
+  <!-- Painel de instrução de navegação (passo atual) -->
+  <div id="nav-instruction" class="nav-instruction hidden">
+    <span id="instr-maneuver" class="instr-maneuver"></span>
+    <div class="instr-text-wrap">
+      <span id="instr-text"></span>
+      <span id="instr-dist" class="instr-dist"></span>
+    </div>
   </div>
 
   <!-- Painel Inferior Flutuante (Telemetria) -->
