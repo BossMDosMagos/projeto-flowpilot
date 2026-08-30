@@ -202,9 +202,10 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
 
 ### Camada visual (código seção 12)
 - Botão flutuante `#traffic-btn` (🚦) liga/desliga um **raster overlay** dos tiles de
-  fluxo da TomTom (`/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png`), com
-  `raster-opacity: 0.55` sobre o Dark Matter/Positron e inserido **abaixo** da rota
-  (`before 'rota-halo'`).
+  fluxo da TomTom (`/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png`, estilo
+  `relative`, `thickness=9` — `relative0` **rejeita** o parâmetro `thickness`, retornando
+  400 e não renderizando nada), com `raster-opacity: 0.55` sobre o Dark Matter/Positron e
+  inserido **abaixo** da rota (`before 'rota-halo'`).
 - A **chave de API** é resolvida em `obterTomtomKey()` nesta ordem: chave digitada na
   primeira ativação e salva em `localStorage['flowpilot:tomtom_key']` **ou**
   `window.TOMTOM_KEY` definido em **`config.local.js`** (arquivo local, **ignorado no

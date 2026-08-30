@@ -65,8 +65,9 @@ const ZOOM_MOVIMENTO = 17;    // Zoom aproximado quando o veículo está em movi
 const ZOOM_PARADO = 16;       // Zoom padrão quando parado/navegando
 
 // TomTom Traffic Flow (tiles raster) — requer chave de API (free tier)
+// Obs.: `thickness` só é aceito por estilos `relative`/`absolute` (não `relative0`)
 const TOMTOM_TRAFFIC_TILES =
-  'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key={KEY}&thickness=9&language=pt-BR&tileSize=256';
+  'https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png?key={KEY}&thickness=9&language=pt-BR&tileSize=256';
 const CHAVE_TOMTOM = 'flowpilot:tomtom_key';
 
 // Monitor anti-engarrafamento e economia de cota de requisições
