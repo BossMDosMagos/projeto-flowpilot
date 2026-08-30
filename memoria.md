@@ -42,7 +42,7 @@ Arquivos:
 
 ## 3. Estrutura do `app.js`
 
-Organizado em 14 blocos comentados:
+Organizado em 15 blocos comentados:
 
 1. **Estado global + constantes** — variáveis do mapa, rota, navegação e estilos.
 2. **Inicialização do mapa** — `initMap()`, controles, tema salvo, seguimento.
@@ -58,6 +58,7 @@ Organizado em 14 blocos comentados:
 12. **Tráfego TomTom** — seção 12: overlay raster de fluxo + botão 🚦.
 13. **Recálculo anti-engarrafamento** — seção 13: monitor econômico + alerta de nova rota.
 14. **Hodômetro + manutenção** — seção 14: KM cumulativo + status do óleo + modal.
+15. **Central de configurações** — seção 15: veículo/perfil OSRM, custo, alertas de velocidade/voz, AMOLED, wake lock toggle e backup JSON.
 
 ---
 
@@ -253,14 +254,52 @@ dirigir, use o simulador (10 km/h no botão ▶, acelerável até 8x).
   (< 0,5 m) e saltos do GPS (> 200 m). Persiste via `salvarKmAtual()`.
 
 ### UI
-- Botão engrenagem `#maint-btn` (trilha direita, `bottom: 390px`) abre o modal
-  `#maint-modal` com: ajuste do KM atual (sincroniza com painel físico), intervalo de
-  troca e "Registrar troca de óleo agora".
-- `#bottom-panel` virou coluna: linha 1 = velocímetro + ETA/DIST/CHEGADA; linha 2 =
-  **strip de manutenção** com odômetro total e status do óleo, ex.:
+- Engrenagem no topo (`#settings-btn`, na barra de busca) abre o modal `#settings-modal`
+  (animações suaves de fade/escala). A seção **Manutenção** mantém: ajuste do KM atual
+  (sincroniza com painel físico), intervalo de troca e "Registrar troca de óleo agora".
+- `#bottom-panel` em coluna: linha 1 = velocímetro + ETA/DIST + Chegada/Custo; linha 2 =
+  **strip de manutenção** com odômetro total, status do óleo e **Trip A**, ex.:
   "usado 1.450 km · falta 1.550 km".
 - **Alertas do óleo:** amarelo quando faltar < 10% do intervalo; **vermelho piscando**
   quando a quilometragem do intervalo for ultrapassada (troca pendente).
 
 > O hodômetro acumula apenas no GPS real (o simulador não incrementa), exigindo
 > permissão de geolocalização e deslocamento real.
+
+---
+
+## 13. Central de configurações e personalização (seção 15)
+
+Persistência única em `localStorage` sob **`flowpilot_settings`** (objeto `settings`).
+Viagens/odômetro mantêm as chaves próprias + `flowpilot:tripA`.
+
+### Perfil do veículo e custos
+- **Tipo de veículo** (Moto/Carro/Bicicleta): `perfilRoteamento()` devolve o perfil OSRM
+  (`driving`/`cycling`) usado em `tracarRota()` **e** no recálculo
+  `consultarRotaAlternativa()`.
+- **Consumo (km/L)** e **Preço (R$/L)**: `calcularCusto()` estima o custo do trecho
+  restante e alimenta a stat **Custo** (R$) na telemetria (linha Chegada/Custo).
+
+### Alertas de velocidade e auditivos
+- **Velocidade máxima**: no `atualizarCorVelocimetro()`, acima do limite o velocímetro
+  fica vermelho + `bipAlerta()` (WebAudio, sem arquivo) na subida; `showFeedback`
+  "Velocidade máxima ultrapassada!". Controle de borda `velocidadeLimiteOk`.
+- **Frequência da voz**: `completa` anuncia a manobra a ~500 m e ~200 m (sets
+  `enunciado500/200`) além do chamado a <30 m; `minima` anuncia só a manobra (<30 m).
+
+### Energia, tela e tema
+- **AMOLED Black**: classe `html.amoled` zera `--bg-overlay`/`--bg-dark` para #000 puro
+  (economia de bateria/sol).
+- **Manter tela ligada**: guard em `solicitarWakeLock()`; desligado libera o lock
+  imediatamente.
+
+### Backup e dados
+- **Exportar/Importar `.json`** (`dadosBackup()`/`aplicarImportacao()`): settings +
+  odômetro (km atual, intervalo, última troca, Trip A) + chave TomTom salva no app.
+- **Reset de Trip**: `btn-reset-trip` zera `tripAKm` (Trip A acumulado junto do
+  hodômetro, exibido no strip e no modal).
+
+### Interface
+- `showFeedback(msg, 'ok')` passa a usar verde (sucesso); sem tipo = vermelho (erro).
+- O botão flutuante da trilha direita para manutenção (`#maint-btn`) foi removido;
+  toda a configuração agora fica na engrenagem do topo.

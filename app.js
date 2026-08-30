@@ -19,6 +19,8 @@ let lastHeading = 0;         // Último rumo (heading) do GPS
 let currentSteps = [];       // Passos da rota atual (com geometrias)
 let currentStepIndex = 0;    // Índice da instrução atual
 let enunciadoPerto = new Set(); // Passos já anunciados por voz
+let enunciado500 = new Set();   // Passos já anunciados a ~500 m (voz "completa")
+let enunciado200 = new Set();   // Passos já anunciados a ~200 m (voz "completa")
 let touchManipulado = false; // Se o usuário manipulou o mapa manualmente
 let watchId = null;          // ID do watchPosition (para pausar/retomar o GPS)
 let wakeLock = null;         // Screen Wake Lock ativo (tela não apaga na navegação)
@@ -44,6 +46,23 @@ let odomPosAnterior = null;  // Última posição GPS p/ cálculo de deslocament
 const CHAVE_KM_ATUAL = 'flowpilot:kmAtualVeiculo';
 const CHAVE_INTERVALO = 'flowpilot:intervaloTrocaOleo';
 const CHAVE_KM_TROCA = 'flowpilot:kmUltimaTrocaOleo';
+const CHAVE_TRIP_A = 'flowpilot:tripA';
+const CHAVE_SETTINGS = 'flowpilot_settings';
+
+// Central de configurações (persistida em flowpilot_settings)
+let settings = {
+  veiculo: 'moto',            // moto | carro | bicicleta
+  consumo: 0,                 // km/L
+  precoCombustivel: 0,        // R$/L
+  velMaxima: 0,               // km/h (0 = desligado)
+  freqVoz: 'completa',        // completa | minima
+  amoled: false,              // fundos #000 puro (bateria OLED)
+  manterTelaLigada: true      // Screen Wake Lock
+};
+let tripAKm = 0;              // KM da viagem diária (Trip A)
+let ultimaVelocidade = 0;     // Última velocidade exibida (p/ re-render de alerta)
+let velocidadeLimiteOk = true; // Controle do bipe: dispara na subida do limite
+let ctxAudio = null;          // Contexto WebAudio para o bipe
 
 // Referências de elementos DOM
 const $ = (id) => document.getElementById(id);
@@ -56,15 +75,29 @@ const btnSimul = $('simul-btn');
 const btnSimulSpeed = $('simul-speed-btn');
 const btnTraffic = $('traffic-btn');
 const trafficAlertEl = $('traffic-alert');
-const btnMaint = $('maint-btn');
-const maintModalEl = $('maint-modal');
+const btnSettings = $('settings-btn');
+const settingsModalEl = $('settings-modal');
 const cfgKmAtual = $('cfg-km-atual');
 const cfgIntervalo = $('cfg-intervalo-oleo');
 const btnRegistrarTroca = $('btn-registrar-troca');
 const btnFecharConfig = $('btn-fechar-config');
 const kmOdometroEl = $('km-odometro');
+const kmTripAEl = $('km-trip-a');
 const oleoStatusEl = $('oleo-status');
 const oleoInfoEl = $('oleo-info');
+const custoRotaEl = $('custo-rota');
+const cfgTipoVeiculo = $('cfg-tipo-veiculo');
+const cfgConsumo = $('cfg-consumo');
+const cfgPrecoCombustivel = $('cfg-preco-combustivel');
+const cfgVelMax = $('cfg-vel-max');
+const cfgFreqVoz = $('cfg-freq-voz');
+const cfgAmoled = $('cfg-amoled');
+const cfgTelaLigada = $('cfg-tela-ligada');
+const cfgTripAValor = $('cfg-trip-a-valor');
+const btnExportar = $('btn-exportar');
+const btnImportar = $('btn-importar');
+const cfgArquivoImport = $('cfg-arquivo-import');
+const btnResetTrip = $('btn-reset-trip');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -319,8 +352,9 @@ function atualizarPosicaoVeiculo(latitude, longitude, velocidadeKmh, heading) {
   if (typeof heading === 'number' && !isNaN(heading)) lastHeading = heading;
 
   // Atualiza o velocímetro
-  velocimetroEl.textContent = Math.round(velocidadeKmh);
-  atualizarCorVelocimetro(Math.round(velocidadeKmh));
+  ultimaVelocidade = Math.round(velocidadeKmh);
+  velocimetroEl.textContent = ultimaVelocidade;
+  atualizarCorVelocimetro(ultimaVelocidade);
 
   // Guarda posição para roteamento
   window.currentCoords = { lat: latitude, lon: longitude };
@@ -458,7 +492,7 @@ function tracarRota() {
   const origem = window.currentCoords || { lon: -46.6333, lat: -23.5505 };
 
   const url =
-    `https://router.project-osrm.org/route/v1/driving/` +
+    `https://router.project-osrm.org/route/v1/${perfilRoteamento()}/` +
     `${origem.lon},${origem.lat};${destinoSelecionado.lon},${destinoSelecionado.lat}` +
     `?overview=full&geometries=geojson&steps=true`;
 
@@ -488,6 +522,8 @@ function processarRota(route) {
     currentSteps = route.legs[0].steps;
     currentStepIndex = 0;
     enunciadoPerto.clear();
+    enunciado500.clear();
+    enunciado200.clear();
     exibirInstrucao(0);
     falarVoz(instrucaoTexto(currentSteps[0]));
   } else {
@@ -611,6 +647,7 @@ function atualizarTelemetria(pos) {
   distKmEl.textContent = formatarDistancia(restante);
   etaTimeEl.textContent = formatarETA(Math.max(0, Math.round(durRestante / 60)));
   chegadaHoraEl.textContent = formatarHora(new Date(Date.now() + durRestante * 1000));
+  if (custoRotaEl) custoRotaEl.textContent = calcularCusto(restante);
 }
 
 // Distância (m) que falta percorrer da posição até o fim da rota
@@ -653,23 +690,34 @@ function projetarPontoNoSegmento(lat, lon, a, b) {
   return { frac, dist: Math.hypot(xp - px, yp - py) };
 }
 
-// Cor do velocímetro conforme velocidade
+// Cor do velocímetro conforme velocidade (+ alerta de velocidade máxima com bipe)
 function atualizarCorVelocimetro(kmh) {
   const speedValue = document.querySelector('.speed-value');
   const speedUnit = document.querySelector('.speed-unit');
   if (!speedValue) return;
 
-  const cor =
-    kmh >= 90 ? '#ef4444' :
-    kmh >= 60 ? '#f59e0b' :
-                 '#22c55e';
+  let cor;
+  if (settings.velMaxima > 0 && kmh > settings.velMaxima) {
+    cor = '#ef4444';
+    if (velocidadeLimiteOk) {
+      velocidadeLimiteOk = false;
+      bipAlerta();
+      showFeedback(`Velocidade máxima de ${settings.velMaxima} km/h ultrapassada!`);
+    }
+  } else {
+    if (!velocidadeLimiteOk) velocidadeLimiteOk = true;
+    cor =
+      kmh >= 90 ? '#ef4444' :
+      kmh >= 60 ? '#f59e0b' :
+                   '#22c55e';
+  }
   speedValue.style.color = cor;
   if (speedUnit) speedUnit.style.color = cor;
   speedValue.style.textShadow = `0 0 12px ${cor}80`;
 }
 
-// Feedback flutuante
-function showFeedback(msg) {
+// Feedback flutuante (tipo 'ok' = verde; padrão = vermelho/erro)
+function showFeedback(msg, tipo) {
   const existing = document.getElementById('flowpilot-feedback');
   if (existing) existing.remove();
 
@@ -678,7 +726,7 @@ function showFeedback(msg) {
   div.textContent = msg;
   div.style.cssText = `
     position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
-    z-index: 2000; background: #ef4444; color: #fff; padding: 12px 20px;
+    z-index: 4000; background: ${tipo === 'ok' ? '#22c55e' : '#ef4444'}; color: #fff; padding: 12px 20px;
     border-radius: 12px; font-size: 14px; font-weight: 600;
     box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-width: 90%; text-align: center;
   `;
@@ -924,6 +972,8 @@ function novaRota() {
   currentSteps = [];
   currentStepIndex = 0;
   enunciadoPerto.clear();
+  enunciado500.clear();
+  enunciado200.clear();
   destinoSelecionado = null;
   removerDestinoMarker();
   currentRouteDistance = 0;
@@ -942,6 +992,7 @@ function novaRota() {
   etaTimeEl.textContent = '--:--';
   distKmEl.textContent = '0.0 km';
   chegadaHoraEl.textContent = '--:--';
+  if (custoRotaEl) custoRotaEl.textContent = '--';
   desativarRota();
 
   inputDestino.value = '';
@@ -973,6 +1024,17 @@ function atualizarInstrucao(origem) {
   const distAteStep = distanciaOrigemAoStep(proxPasso, origem);
 
   instrDistEl.textContent = descricaoProximaAcao(proxPasso, distAteStep);
+
+  // Voz "Completa": anuncia a manobra a ~500 m e ~200 m (sem repetir ao passar)
+  if (settings.freqVoz === 'completa' && proxIndex > currentStepIndex) {
+    if (distAteStep <= 500 && distAteStep > 220 && !enunciado500.has(proxIndex)) {
+      enunciado500.add(proxIndex);
+      falarVoz(descricaoProximaAcao(proxPasso, distAteStep));
+    } else if (distAteStep <= 200 && distAteStep >= 30 && !enunciado200.has(proxIndex)) {
+      enunciado200.add(proxIndex);
+      falarVoz(descricaoProximaAcao(proxPasso, distAteStep));
+    }
+  }
 
   if (distAteStep < 30 && proxIndex > currentStepIndex && !enunciadoPerto.has(proxIndex)) {
     enunciadoPerto.add(proxIndex);
@@ -1187,6 +1249,7 @@ function pontoNaRota(coords, d) {
 
 /* ---------- 11. SCREEN WAKE LOCK (tela nunca apaga na navegação) ---------- */
 async function solicitarWakeLock() {
+  if (!settings.manterTelaLigada) return; // toggle "Manter tela ligada" desligado
   if (!('wakeLock' in navigator)) return;
   if (wakeLock) return;
   try {
@@ -1375,7 +1438,7 @@ function consultarRotaAlternativa() {
 
   recalcEmProgresso = true;
   const url =
-    `https://router.project-osrm.org/route/v1/driving/` +
+    `https://router.project-osrm.org/route/v1/${perfilRoteamento()}/` +
     `${origem.lon},${origem.lat};${dest.lon},${dest.lat}` +
     `?overview=full&geometries=geojson&steps=true&alternatives=true`;
 
@@ -1468,17 +1531,21 @@ function acumularHodometro(latitude, longitude, velocidadeKmh) {
     const d = haversine(odomPosAnterior.lat, odomPosAnterior.lon, latitude, longitude);
     if (d > 0.5 && d < 200) {
       kmAtualVeiculo += d;
+      tripAKm += d;
       salvarKmAtual();
+      salvarTripA();
     }
   }
   odomPosAnterior = { lat: latitude, lon: longitude };
   atualizarPainelManutencao();
 }
 
-// Atualiza o strip: odômetro total + status do óleo (amarelo < 10% / vermelho)
+// Atualiza o strip: odômetro total + óleo + Trip A (amarelo <10% / vermelho)
 function atualizarPainelManutencao() {
   if (!kmOdometroEl || !oleoStatusEl) return;
   kmOdometroEl.textContent = fmtKm(kmAtualVeiculo);
+  if (kmTripAEl) kmTripAEl.textContent = fmtKm(tripAKm);
+  if (cfgTripAValor) cfgTripAValor.textContent = fmtKm(tripAKm);
 
   oleoStatusEl.classList.remove('alerta-amarelo', 'alerta-vermelho');
 
@@ -1503,26 +1570,152 @@ function atualizarPainelManutencao() {
   }
 }
 
-/* ---- Painel de manutenção (modal de calibragem) ---- */
-btnMaint.addEventListener('click', () => {
+/* ---------- 15. CENTRAL DE CONFIGURAÇÕES E PERSONALIZAÇÃO ---------- */
+// Perfil OSRM conforme o tipo de veículo (driving / cycling)
+function perfilRoteamento() {
+  const map = { moto: 'driving', carro: 'driving', bicicleta: 'cycling' };
+  return map[settings.veiculo] || 'driving';
+}
+
+// Custo (R$) do trecho restante da rota com base no consumo e no combustível
+function calcularCusto(distM) {
+  if (settings.consumo <= 0 || settings.precoCombustivel <= 0) return '--';
+  const valor = (distM / 1000) / settings.consumo * settings.precoCombustivel;
+  if (!isFinite(valor) || valor <= 0) return '--';
+  return 'R$ ' + valor.toFixed(2).replace('.', ',');
+}
+
+// Bipe curto de alerta (WebAudio, sem arquivo de áudio)
+function bipAlerta() {
+  try {
+    if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < 2; i++) {
+      const osc = ctxAudio.createOscillator();
+      const gain = ctxAudio.createGain();
+      const t = ctxAudio.currentTime + i * 0.18;
+      osc.type = 'square';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.14, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      osc.connect(gain);
+      gain.connect(ctxAudio.destination);
+      osc.start(t);
+      osc.stop(t + 0.16);
+    }
+  } catch (e) {}
+}
+
+// Carrega as configurações do localStorage (flowpilot_settings) + Trip A
+function carregarSettings() {
+  try {
+    const raw = localStorage.getItem(CHAVE_SETTINGS);
+    if (raw) settings = Object.assign({}, settings, JSON.parse(raw));
+  } catch (e) {}
+  tripAKm = numeroOu(localStorage.getItem(CHAVE_TRIP_A), 0);
+}
+
+function salvarSettings() {
+  try { localStorage.setItem(CHAVE_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+}
+
+function salvarTripA() {
+  try { localStorage.setItem(CHAVE_TRIP_A, String(tripAKm)); } catch (e) {}
+}
+
+// Reflete as configurações na interface (tema AMOLED, velocímetro, custo)
+function aplicarSettings() {
+  document.documentElement.classList.toggle('amoled', !!settings.amoled);
+  atualizarCorVelocimetro(ultimaVelocidade);
+  if (window.currentCoords) atualizarTelemetria(window.currentCoords);
+}
+
+// Preenche os campos do modal com o estado atual
+function preencherModalConfig() {
+  cfgTipoVeiculo.value = settings.veiculo;
+  cfgConsumo.value = settings.consumo || '';
+  cfgPrecoCombustivel.value = settings.precoCombustivel || '';
+  cfgVelMax.value = settings.velMaxima || '';
+  cfgFreqVoz.value = settings.freqVoz;
+  cfgAmoled.checked = !!settings.amoled;
+  cfgTelaLigada.checked = !!settings.manterTelaLigada;
   cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
   cfgIntervalo.value = intervaloTrocaOleo || '';
-  maintModalEl.classList.add('visivel');
+  if (cfgTripAValor) cfgTripAValor.textContent = fmtKm(tripAKm);
+}
+
+// Abre/fecha o modal de configurações
+function abrirConfiguracoes() {
+  preencherModalConfig();
+  settingsModalEl.classList.add('visivel');
+}
+
+/* ---- Abertura/fechamento ---- */
+btnSettings.addEventListener('click', abrirConfiguracoes);
+btnFecharConfig.addEventListener('click', () => settingsModalEl.classList.remove('visivel'));
+settingsModalEl.addEventListener('click', (e) => {
+  if (e.target === settingsModalEl) settingsModalEl.classList.remove('visivel');
 });
 
-btnFecharConfig.addEventListener('click', () => maintModalEl.classList.remove('visivel'));
-
-maintModalEl.addEventListener('click', (e) => {
-  if (e.target === maintModalEl) maintModalEl.classList.remove('visivel');
+/* ---- Perfil do veículo e custos ---- */
+cfgTipoVeiculo.addEventListener('change', () => {
+  settings.veiculo = cfgTipoVeiculo.value;
+  salvarSettings();
+  const nomes = { moto: 'Moto', carro: 'Carro', bicicleta: 'Bicicleta' };
+  showFeedback('Perfil de rota: ' + (nomes[settings.veiculo] || settings.veiculo) + '.', 'ok');
 });
 
+cfgConsumo.addEventListener('change', () => {
+  const v = parseFloat(cfgConsumo.value);
+  settings.consumo = isFinite(v) && v >= 0 ? v : 0;
+  salvarSettings();
+  aplicarSettings();
+});
+
+cfgPrecoCombustivel.addEventListener('change', () => {
+  const v = parseFloat(cfgPrecoCombustivel.value);
+  settings.precoCombustivel = isFinite(v) && v >= 0 ? v : 0;
+  salvarSettings();
+  aplicarSettings();
+});
+
+/* ---- Alertas de velocidade e voz ---- */
+cfgVelMax.addEventListener('change', () => {
+  const v = parseFloat(cfgVelMax.value);
+  settings.velMaxima = isFinite(v) && v >= 0 ? v : 0;
+  salvarSettings();
+  aplicarSettings();
+});
+
+cfgFreqVoz.addEventListener('change', () => {
+  settings.freqVoz = cfgFreqVoz.value === 'minima' ? 'minima' : 'completa';
+  salvarSettings();
+});
+
+/* ---- Energia, tela e tema ---- */
+cfgAmoled.addEventListener('change', () => {
+  settings.amoled = cfgAmoled.checked;
+  salvarSettings();
+  aplicarSettings();
+});
+
+cfgTelaLigada.addEventListener('change', () => {
+  settings.manterTelaLigada = cfgTelaLigada.checked;
+  salvarSettings();
+  if (settings.manterTelaLigada) {
+    if (rotaAtiva) solicitarWakeLock();
+  } else {
+    liberarWakeLock();
+  }
+});
+
+/* ---- Manutenção / hodômetro ---- */
 cfgKmAtual.addEventListener('change', () => {
   const v = parseFloat(cfgKmAtual.value);
   if (isFinite(v) && v >= 0) {
     kmAtualVeiculo = v;
     salvarKmAtual();
     atualizarPainelManutencao();
-    showFeedback('KM atual do veículo ajustado.');
+    showFeedback('KM atual do veículo ajustado.', 'ok');
   } else if (cfgKmAtual.value !== '') {
     showFeedback('Valor inválido para o KM atual.');
   }
@@ -1543,12 +1736,93 @@ btnRegistrarTroca.addEventListener('click', () => {
   kmUltimaTrocaOleo = kmAtualVeiculo;
   salvarKmTroca();
   atualizarPainelManutencao();
-  maintModalEl.classList.remove('visivel');
-  showFeedback('Troca de óleo registrada!');
+  showFeedback('Troca de óleo registrada!', 'ok');
 });
 
-// Carrega as variáveis persistentes e pinta o painel de manutenção no boot
+btnResetTrip.addEventListener('click', () => {
+  tripAKm = 0;
+  salvarTripA();
+  atualizarPainelManutencao();
+  showFeedback('Trip A zerada!', 'ok');
+});
+
+/* ---- Backup: exportar / importar JSON ---- */
+function dadosBackup() {
+  return {
+    app: 'FlowPilot',
+    versao: 1,
+    exportadoEm: new Date().toISOString(),
+    settings: settings,
+    odometro: {
+      kmAtualVeiculo,
+      intervaloTrocaOleo,
+      kmUltimaTrocaOleo,
+      tripAKm
+    },
+    tomtomKey: obterTomtomKey() || undefined
+  };
+}
+
+btnExportar.addEventListener('click', () => {
+  try {
+    const blob = new Blob([JSON.stringify(dadosBackup(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'flowpilot-config-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showFeedback('Configurações exportadas!', 'ok');
+  } catch (e) {
+    showFeedback('Não foi possível exportar.');
+  }
+});
+
+btnImportar.addEventListener('click', () => cfgArquivoImport.click());
+
+cfgArquivoImport.addEventListener('change', (e) => {
+  const arquivo = e.target.files && e.target.files[0];
+  if (!arquivo) return;
+  const leitor = new FileReader();
+  leitor.onload = () => {
+    try {
+      aplicarImportacao(JSON.parse(leitor.result));
+      showFeedback('Configurações restauradas!', 'ok');
+    } catch (err) {
+      console.error('Import inválido:', err);
+      showFeedback('Arquivo de configuração inválido.');
+    }
+  };
+  leitor.readAsText(arquivo);
+  e.target.value = '';
+});
+
+function aplicarImportacao(d) {
+  if (!d || typeof d !== 'object') throw new Error('sem dados');
+  if (d.settings) settings = Object.assign({}, settings, d.settings);
+  if (d.odometro) {
+    const o = d.odometro;
+    if (isFinite(o.kmAtualVeiculo)) kmAtualVeiculo = o.kmAtualVeiculo;
+    if (isFinite(o.intervaloTrocaOleo)) intervaloTrocaOleo = Math.max(0, o.intervaloTrocaOleo);
+    if (isFinite(o.kmUltimaTrocaOleo)) kmUltimaTrocaOleo = o.kmUltimaTrocaOleo;
+    if (isFinite(o.tripAKm)) tripAKm = o.tripAKm;
+  }
+  if (d.tomtomKey) {
+    try { localStorage.setItem(CHAVE_TOMTOM, d.tomtomKey); } catch (e) {}
+  }
+  salvarSettings();
+  salvarKmAtual();
+  salvarIntervalo();
+  salvarKmTroca();
+  salvarTripA();
+  preencherModalConfig();
+  aplicarSettings();
+  atualizarPainelManutencao();
+}
+
+// Boot: carrega settings + manutenção e pinta a interface
+carregarSettings();
 carregarHodometro();
+aplicarSettings();
 atualizarPainelManutencao();
 
 /* ---------- Inicialização ---------- */

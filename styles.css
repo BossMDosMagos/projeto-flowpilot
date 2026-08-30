@@ -82,6 +82,7 @@ html, body {
 
 #destino-input {
   flex: 1;
+  min-width: 0;
   height: 52px;
   padding: 0 16px;
   border: none;
@@ -114,6 +115,26 @@ html, body {
 
 #iniciar-rota-btn:hover {
   opacity: 0.9;
+}
+
+/* Botão de engrenagem (Configurações) no topo */
+#settings-btn {
+  height: 52px;
+  width: 52px;
+  min-width: 52px;
+  border: none;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+
+#settings-btn:active {
+  transform: scale(0.92);
 }
 
 /* Lista de sugestões de busca */
@@ -343,71 +364,96 @@ body.noturno #theme-btn .icon-moon { display: none; }
 }
 
 /* ============================================
-   BOTÃO FLUTUANTE - MANUTENÇÃO / ODÔMETRO
+   MODAL DE CONFIGURAÇÕES
    ============================================ */
-#maint-btn {
-  position: fixed;
-  right: 16px;
-  bottom: 450px;
-  z-index: 1000;
-  width: 50px;
-  height: 50px;
-  border: none;
-  border-radius: 50%;
-  background: var(--bg-overlay);
-  color: var(--text-primary);
-  box-shadow: var(--shadow);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-  transition: transform 0.15s;
-}
-
-#maint-btn:active {
-  transform: scale(0.92);
-}
-
-/* ============================================
-   MODAL DE MANUTENÇÃO
-   ============================================ */
-.maint-modal {
+.settings-modal {
   position: fixed;
   inset: 0;
   z-index: 3000;
   background: rgba(0, 0, 0, 0.55);
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s;
 }
 
-.maint-modal.visivel {
-  display: flex;
+.settings-modal.visivel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
-.maint-modal-card {
+.settings-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 390px;
+  max-height: 82vh;
   background: var(--bg-overlay);
   backdrop-filter: blur(8px);
   border-radius: 20px;
   box-shadow: var(--shadow);
-  padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  transform: translateY(14px) scale(0.97);
+  opacity: 0.4;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
 }
 
-.maint-title {
-  margin: 0 0 6px;
+.settings-modal.visivel .settings-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+}
+
+.settings-title {
+  margin: 0;
   font-size: 20px;
   font-weight: 800;
   color: var(--text-primary);
 }
 
-.maint-field-label {
+.settings-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.settings-close:active {
+  opacity: 0.7;
+}
+
+.settings-body {
+  padding: 4px 20px 20px;
+  overflow-y: auto;
+}
+
+.settings-section-title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  margin: 14px 0 4px;
+}
+
+.settings-field-label {
+  display: block;
   font-size: 12px;
   color: var(--text-secondary);
   font-weight: 700;
@@ -416,7 +462,8 @@ body.noturno #theme-btn .icon-moon { display: none; }
   margin-top: 6px;
 }
 
-.maint-input {
+.settings-input {
+  width: 100%;
   height: 46px;
   padding: 0 14px;
   border: none;
@@ -426,33 +473,143 @@ body.noturno #theme-btn .icon-moon { display: none; }
   font-size: 16px;
   font-weight: 600;
   outline: none;
+  margin-top: 4px;
 }
 
-.maint-hint {
+select.settings-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+.settings-hint {
   font-size: 12px;
   color: var(--text-secondary);
-  margin: 2px 0 6px;
+  margin: 4px 0 2px;
 }
 
-.maint-btn {
+.settings-btn {
   border: none;
   border-radius: 12px;
-  padding: 14px;
-  font-size: 15px;
+  padding: 13px 16px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   background: #e5e7eb;
   color: #0f172a;
   transition: opacity 0.2s;
+  margin-top: 10px;
 }
 
-.maint-btn.primary {
+.settings-btn.primary {
   background: var(--accent);
   color: #ffffff;
 }
 
-.maint-btn:hover {
+.settings-btn.danger {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.settings-btn:hover {
   opacity: 0.9;
+}
+
+/* Toggle (switch) */
+.settings-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.settings-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s;
+}
+
+.settings-switch input:checked + .switch-track {
+  background: var(--accent);
+}
+
+.settings-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(20px);
+}
+
+/* Linhas auxiliares dentro do modal */
+.settings-row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-row .settings-btn {
+  flex: 1;
+}
+
+.settings-trip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.settings-trip-valor {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.settings-trip-row .settings-btn {
+  margin-top: 0;
+}
+
+/* ============================================
+   MODO AMOLED BLACK (economia de bateria OLED)
+   ============================================ */
+html.amoled body {
+  --bg-overlay: rgba(0, 0, 0, 0.92);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+}
+
+html.amoled body.noturno {
+  --bg-overlay: rgba(0, 0, 0, 0.92);
+  --bg-dark: #000000;
 }
 
 /* Alerta de nova rota mais rápida (anti-engarrafamento) */
@@ -687,10 +844,18 @@ body:not(.rota-ativa) #nav-instruction {
 .route-stats-row {
   display: flex;
   gap: 18px;
+  justify-content: center;
+}
+
+.route-stats-row.fim {
+  gap: 22px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding-top: 6px;
 }
 
 .stat {
   text-align: center;
+  min-width: 0;
 }
 
 .stat-label {
@@ -711,25 +876,16 @@ body:not(.rota-ativa) #nav-instruction {
   white-space: nowrap;
 }
 
-/* Hora estimada de chegada ocupa a largura do painel de estatísticas */
-.stat-chegada {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
-  padding-top: 6px;
-}
-
+/* Chegada ao lado do custo (linha 2 das estatísticas) */
 .stat-chegada .stat-value {
-  font-size: 22px;
+  font-size: 20px;
   color: var(--accent);
 }
 
-/* Strip de manutenção (odômetro + óleo) */
+/* Strip de manutenção (odômetro + óleo + trip A) */
 .maintenance-strip {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
   border-top: 1px solid rgba(148, 163, 184, 0.25);
   padding-top: 8px;
