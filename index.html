@@ -4,310 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>FlowPilot - Navegação GPS</title>
-  
-  <!-- MapLibre GL JS -->
-  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
-  <style>
-    /* --- CONFIGURAÇÕES GERAIS --- */
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      user-select: none;
-    }
+  <!-- Leaflet.js CSS e JS via CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-    body, html {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #030712; /* Fundo escuro atrás do celular no PC */
-      color: #ffffff;
-    }
-
-    /* --- SIMULADOR MOBILE NO PC --- */
-    .app-viewport {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      max-width: 450px; /* Trava a largura máxima de um celular no PC */
-      max-height: 920px;
-      overflow: hidden;
-      background-color: #0b131e;
-      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
-      margin: auto;
-    }
-
-    /* Se for celular real, ocupa 100% sem restrições */
-    @media (max-width: 480px) {
-      .app-viewport {
-        max-width: 100vw;
-        max-height: 100vh;
-        border-radius: 0;
-      }
-    }
-
-    /* --- MAPA FULLSCREEN --- */
-    #map {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-    }
-
-    /* --- BOTOES FLUTUANTES DA INTERFACE --- */
-    .btn-floating {
-      position: absolute;
-      z-index: 10;
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: rgba(18, 26, 38, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      cursor: pointer;
-    }
-
-    .btn-top-left { top: 16px; left: 16px; }
-    .btn-compass { top: 72px; left: 16px; }
-    .btn-top-right-1 { top: 16px; right: 16px; }
-    .btn-top-right-2 { top: 72px; right: 16px; }
-    .btn-report { bottom: 100px; right: 16px; background: #eab308; color: #000; font-weight: bold; }
-
-    /* --- MODO NAVEGAÇÃO: CADEIRA SUPERIOR (HEADER) --- */
-    #nav-header {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 20;
-      background: #000000;
-      padding: 12px 16px;
-      display: none; /* Exibe quando está em rota */
-      flex-direction: column;
-      gap: 6px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
-    }
-
-    .nav-main-instruction {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .turn-icon {
-      width: 42px;
-      height: 42px;
-      fill: #ffffff;
-    }
-
-    .nav-text-group {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .nav-distance {
-      font-size: 28px;
-      font-weight: 800;
-      color: #ffffff;
-    }
-
-    .nav-street {
-      font-size: 18px;
-      font-weight: 600;
-      color: #38bdf8;
-    }
-
-    .nav-sub-instruction {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      color: #94a3b8;
-      border-top: 1px solid #1e293b;
-      padding-top: 4px;
-      margin-top: 4px;
-    }
-
-    /* --- BADGE RUA ATUAL (FLUTUANTE NO CENTRO INFERIOR) --- */
-    #current-street-badge {
-      position: absolute;
-      bottom: 95px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      background: #000000;
-      color: #ffffff;
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 600;
-      border: 1px solid #334155;
-      white-space: nowrap;
-    }
-
-    /* --- PAINEL INFERIOR - MODO OCIOSO (BUSCA) --- */
-    #search-bottom-sheet {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 20;
-      background: #121a26;
-      border-top-left-radius: 24px;
-      border-top-right-radius: 24px;
-      padding: 16px;
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
-    }
-
-    .sheet-drag-handle {
-      width: 36px;
-      height: 4px;
-      background: #334155;
-      border-radius: 2px;
-      margin: 0 auto 12px auto;
-    }
-
-    .search-bar-input {
-      width: 100%;
-      height: 48px;
-      background: #1e293b;
-      border: none;
-      border-radius: 24px;
-      padding: 0 16px 0 48px;
-      color: #ffffff;
-      font-size: 16px;
-      outline: none;
-    }
-
-    /* --- PAINEL INFERIOR - MODO NAVEGAÇÃO --- */
-    #nav-bottom-bar {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 20;
-      background: #121a26;
-      height: 80px;
-      display: none; /* Exibe quando em rota */
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 24px;
-      border-top-left-radius: 20px;
-      border-top-right-radius: 20px;
-    }
-
-    .speedometer-circle {
-      width: 54px;
-      height: 54px;
-      border-radius: 50%;
-      background: #1e293b;
-      border: 2px solid #475569;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 16px;
-      color: #94a3b8;
-    }
-
-    .eta-group {
-      text-align: center;
-    }
-
-    .eta-time {
-      font-size: 26px;
-      font-weight: 800;
-      color: #ffffff;
-    }
-
-    .eta-details {
-      font-size: 14px;
-      color: #94a3b8;
-      font-weight: 600;
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
 </head>
 <body>
 
-  <!-- CONTAINER DO APLICATIVO (SIMULADOR MOBILE) -->
-  <div class="app-viewport">
+  <!-- Container do Mapa (tela cheia) -->
+  <div id="map"></div>
 
-    <!-- CONTAINER DO MAPA -->
-    <div id="map"></div>
-
-    <!-- BOTOES FLUTUANTES DA INTERFACE -->
-    <div class="btn-floating btn-top-left">☰</div>
-    <div class="btn-floating btn-compass">🧭</div>
-    <div class="btn-floating btn-top-right-1">🎵</div>
-    <div class="btn-floating btn-top-right-2">🔊</div>
-    <div class="btn-floating btn-report">⚠️</div>
-
-    <!-- NAVEGAÇÃO: HEADER DE INSTRUÇÃO (MODO ROTA) -->
-    <div id="nav-header">
-      <div class="nav-main-instruction">
-        <svg class="turn-icon" viewBox="0 0 24 24">
-          <path d="M19 11l-6-6-1.41 1.41L15.17 10H8c-2.76 0-5 2.24-5 5v4h2v-4c0-1.66 1.34-3 3-3h7.17l-3.58 3.59L13 17l6-6z"/>
-        </svg>
-        <div class="nav-text-group">
-          <span class="nav-distance" id="nav-dist">40 m</span>
-          <span class="nav-street" id="nav-street-name">R. Novo Horizonte da Vl. do João</span>
-        </div>
-      </div>
-      <div class="nav-sub-instruction">
-        <span>em seguida</span>
-        <svg width="16" height="16" fill="#94a3b8" viewBox="0 0 24 24">
-          <path d="M19 11l-6-6-1.41 1.41L15.17 10H8c-2.76 0-5 2.24-5 5v4h2v-4c0-1.66 1.34-3 3-3h7.17l-3.58 3.59L13 17l6-6z"/>
-        </svg>
-      </div>
+  <!-- Barra Superior Flutuante (Busca) -->
+  <div id="top-bar">
+    <div class="top-bar-inner">
+      <input type="text" id="destino-input" placeholder="Para onde você vai?" autocomplete="off">
+      <button id="iniciar-rota-btn" type="button">Iniciar Rota</button>
     </div>
-
-    <!-- RUA ATUAL (FLUTUANTE SOBRE O MAPA) -->
-    <div id="current-street-badge">Tv. Cordialidade da Vl. do João</div>
-
-    <!-- PAINEL INFERIOR: MODO BUSCA (OCIOSO) -->
-    <div id="search-bottom-sheet">
-      <div class="sheet-drag-handle"></div>
-      <input type="text" class="search-bar-input" placeholder="Para onde?" id="search-input">
-    </div>
-
-    <!-- PAINEL INFERIOR: MODO NAVEGAÇÃO ATIVA -->
-    <div id="nav-bottom-bar">
-      <div class="speedometer-circle" id="speedometer">--</div>
-      <div class="eta-group">
-        <div class="eta-time" id="eta-time">6:24</div>
-        <div class="eta-details"><span id="eta-min">21 min</span> • <span id="eta-km">17 km</span></div>
-      </div>
-      <div style="width: 40px;"></div> <!-- Espaçador para balancear alinhamento -->
-    </div>
-
+    <div id="sugestoes" class="sugestoes"></div>
   </div>
 
-  <script>
-    // Inicialização do Mapa com Tema Escuro (CartoDB Dark Matter)
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [-43.249, -22.858], // Coordenadas Iniciais (ex: Rio de Janeiro)
-      zoom: 16,
-      pitch: 45, // Inclinação 3D estilo Waze
-      bearing: 0
-    });
+  <!-- Painel Inferior Flutuante (Telemetria) -->
+  <div id="bottom-panel">
+    <div class="speedometer">
+      <span class="speed-value" id="velocimetro">0</span>
+      <span class="speed-unit">km/h</span>
+    </div>
+    <div class="route-stats">
+      <div class="stat">
+        <span class="stat-label">ETA</span>
+        <span class="stat-value" id="eta-time">--:--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">DIST</span>
+        <span class="stat-value" id="dist-km">0.0 km</span>
+      </div>
+    </div>
+  </div>
 
-    // Função de alternância de tela para testes no Open Code
-    function ativarModoNavegacao(ativo = true) {
-      document.getElementById('nav-header').style.display = ativo ? 'flex' : 'none';
-      document.getElementById('nav-bottom-bar').style.display = ativo ? 'flex' : 'none';
-      document.getElementById('search-bottom-sheet').style.display = ativo ? 'none' : 'block';
-    }
-  </script>
-
+  <script src="app.js"></script>
 </body>
 </html>

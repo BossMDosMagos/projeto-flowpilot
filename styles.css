@@ -1,216 +1,265 @@
-/* FlowPilot - Dark Mode Navigation PWA */
+/* ============================================
+   FLOWPILOT - Painel de Bordo Profissional
+   Estilo: CartoDB Positron (muted/limpo)
+   ============================================ */
+
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --accent: #10b981;
-  --text-primary: #fff;
-  --text-secondary: #cbd5e1;
-  --text-mute: #64748b;
+  --bg-dark: #0f172a;
+  --bg-overlay: rgba(15, 23, 42, 0.9);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --accent: #22c55e;      /* Verde brillante do velocímetro */
+  --accent-blue: #2563eb;  /* Azul da rota */
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
-/* Reset */
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  font-family: 'Segoe UI', Tahoma, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+html, body {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  touch-action: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #e8eaed; /* Cores do CartoDB Positron */
 }
 
-/* Map Container - Absolute fullscreen, z-index 1 */
+/* ============================================
+   MAPA - Tela cheia, sem scrollbar
+   ============================================ */
 #map {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   z-index: 1;
 }
 
-/* Top Maneuver Header - Fixed, z-index 10 */
-.header-fixed {
+/* ============================================
+   BARRA SUPERIOR FLUTUANTE (Busca)
+   ============================================ */
+#top-bar {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
-  z-index: 10;
-  background: #0f172a;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: calc(100% - 24px);
+  max-width: 420px;
+  background: var(--bg-overlay);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  backdrop-filter: blur(6px);
+}
+
+.top-bar-inner {
   display: flex;
-  align-items: center;
+  gap: 8px;
+}
+
+#destino-input {
+  flex: 1;
+  height: 52px;
   padding: 0 16px;
-  border-bottom: 1px solid #1e293b;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-}
-
-.maneuver-icon {
-  width: 48px;
-  height: 48px;
-  background: #1e293b;
-  border-radius: 8px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-}
-
-.maneuver-info {
-  flex: 1;
-  text-align: left;
-  color: #fff;
-}
-
-.maneuver-distance {
-  font-size: 1.25rem;
-  font-weight: bold;
-}
-
-.maneuver-street {
-  font-size: 0.875rem;
-  color: #cbd5e1;
-  margin-top: 2px;
-}
-
-/* Bottom Telemetry Footer - Fixed, z-index 10 */
-.footer-fixed {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 90px;
-  z-index: 10;
-  background: #0f172a;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
-  border-top: 1px solid #1e293b;
-}
-
-.speedometer {
-  text-align: left;
-  flex: 1;
-}
-
-.speed-value {
-  font-size: 3rem;
-  font-weight: bold;
-  color: #10b981;
-}
-
-.route-panel {
-  text-align: right;
-  flex: 1;
-  padding-right: 20px;
-  color: #fff;
-}
-
-.eta {
-  font-size: 0.875rem;
-  color: #94a3b8;
-  margin-bottom: 4px;
-}
-
-.distance {
-  font-size: 0.875rem;
-  color: #64748b;
-  margin-bottom: 2px;
-}
-
-.time-remaining {
-  font-size: 0.75rem;
-  color: #94a3b8;
-}
-
-/* Floating Menu - Fixed top, z-index 20 */
-.floating-menu {
-  position: fixed;
-  top: 90px;
-  left: 16px;
-  z-index: 20;
-  background: rgba(15, 23, 42, 0.95);
-  width: 300px;
-  padding: 16px;
-  border-radius: 12px;
-  display: none;
-}
-
-.floating-menu.visible {
-  display: block;
-}
-
-.address-search {
-  width: 100%;
-  padding: 12px 16px;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.95rem;
-  outline: none;
-  margin-bottom: 12px;
-}
-
-.address-search::placeholder {
-  color: #64748b;
-}
-
-.address-suggestions {
-  max-height: 200px;
-  overflow-y: auto;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.85rem;
-  padding: 8px 12px;
-}
-
-.address-suggestions div {
-  padding: 8px 12px;
-  cursor: pointer;
-  border-radius: 6px;
-  margin: 4px 0;
-}
-
-.address-suggestions div:hover {
-  background: #059669;
-  color: #fff;
-}
-
-.start-route-btn {
-  width: 100%;
-  padding: 12px;
-  background: #059669;
-  color: #fff;
   border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 600;
+  outline: none;
+}
+
+#destino-input::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+#iniciar-rota-btn {
+  height: 52px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
-  margin-top: 8px;
+  white-space: nowrap;
   transition: opacity 0.2s;
 }
 
-.start-route-btn:hover {
+#iniciar-rota-btn:hover {
   opacity: 0.9;
 }
 
-/* Reduced motion */
+/* Lista de sugestões de busca */
+.sugestoes {
+  margin-top: 8px;
+  display: none;
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: 10px;
+}
+
+.sugestoes.visivel {
+  display: block;
+}
+
+.sugestao-item {
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 500;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  transition: background 0.2s;
+}
+
+.sugestao-item:active,
+.sugestao-item:hover {
+  background: #e0e7ff;
+}
+
+/* ============================================
+   PAINEL INFERIOR FLUTUANTE (Telemetria)
+   ============================================ */
+#bottom-panel {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: calc(100% - 24px);
+  max-width: 420px;
+  background: var(--bg-overlay);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(6px);
+}
+
+/* Velocímetro - fundo escuro, texto verde brillante (painel de bordo) */
+.speedometer {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  background: #05070d;
+  border-radius: 16px;
+  padding: 12px 20px;
+  min-width: 140px;
+  text-align: center;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+.speed-value {
+  font-size: 52px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+}
+
+.speed-unit {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Painel de estatísticas da rota */
+.route-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+/* ============================================
+   MARKER PERSONALIZADO (veículo do motorista)
+   ============================================ */
+.vehicle-marker {
+  width: 46px;
+  height: 46px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 15px rgba(37, 99, 235, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.vehicle-marker::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 14px solid #ffffff;
+  position: absolute;
+  top: 4px;
+}
+
+/* Tooltip do Leaflet */
+.leaflet-tooltip.vehicle-label {
+  font-weight: 700;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+/* ============================================
+   ROTA (Polyline)
+   ============================================ */
+.route-line {
+  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.6));
+}
+
+/* ============================================
+   RESPONSIVIDADE
+   ============================================ */
+@media (max-width: 480px) {
+  #top-bar, #bottom-panel {
+    width: calc(100% - 16px);
+  }
+}
+
+/* ============================================
+   ACESSIBILIDADE - redução de movimento
+   ============================================ */
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0ms !important;
-    animation-duration: 0ms !important;
   }
 }
