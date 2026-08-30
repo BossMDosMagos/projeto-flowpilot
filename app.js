@@ -27,6 +27,7 @@ const btnLocate = $('locate-btn');
 const btnTheme = $('theme-btn');
 const btnNovaRota = $('nova-rota-btn');
 const btnSimul = $('simul-btn');
+const btnSimulSpeed = $('simul-speed-btn');
 const sugestoesEl = $('sugestoes');
 const velocimetroEl = $('velocimetro');
 const etaTimeEl = $('eta-time');
@@ -889,12 +890,22 @@ inputDestino.addEventListener('focus', () => {
 });
 
 /* ---------- 10. SIMULADOR DE ROTA (testar manobras sem dirigir) ---------- */
-const VEL_SIM = 10;            // Velocidade simulada (km/h)
+const VEL_SIM = 10;            // Velocidade base simulada (km/h)
 const TICK_SIM_MS = 200;       // Intervalo do timer (ms)
 const TICK_SEG = TICK_SIM_MS / 1000;
+const FATORES_SIM = [1, 2, 4, 8]; // Multiplicadores do acelerador
+let simulFator = 1;            // Fator atual do acelerador
 let simulAtivo = false;        // Se a simulação está rodando
 let simulTimer = null;         // Timer do setInterval
 let simulDist = 0;             // Distância percorrida na simulação (m)
+
+// Acelerador: alterna o multiplicador de velocidade (1x/2x/4x/8x)
+btnSimulSpeed.addEventListener('click', () => {
+  const i = FATORES_SIM.indexOf(simulFator);
+  simulFator = FATORES_SIM[(i + 1) % FATORES_SIM.length];
+  btnSimulSpeed.textContent = `${simulFator}x`;
+  showFeedback(`Velocidade da simulação: ${simulFator}x`);
+});
 
 // Botão flutuante de simulação: alterna iniciar/parar
 btnSimul.addEventListener('click', () => {
@@ -937,11 +948,12 @@ function pararSimulacao() {
 }
 
 function avancarSimulacao() {
-  const passoMetros = (VEL_SIM / 3.6) * TICK_SEG;
+  const velKmh = VEL_SIM * simulFator;
+  const passoMetros = (velKmh / 3.6) * TICK_SEG;
   simulDist += passoMetros;
 
   const p = pontoNaRota(currentRouteCoords, simulDist);
-  atualizarPosicaoVeiculo(p.lat, p.lon, p.fim ? 0 : VEL_SIM, p.heading);
+  atualizarPosicaoVeiculo(p.lat, p.lon, p.fim ? 0 : velKmh, p.heading);
 
   if (p.fim) {
     pararSimulacao();

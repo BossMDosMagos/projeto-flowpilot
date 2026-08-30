@@ -125,13 +125,18 @@ Usado no card via `exibirInstrucao()` (próximo passo) e em `atualizarInstrucao(
   `avancarSimulacao()`, `calcBearing()`, `pontoNaRota()` e o listener de `btnSimul`
   (toggle play/stop). Constantes: `VEL_SIM = 10` km/h e tick de `200 ms`.
 - **`styles.css`**: bloco `#simul-btn` (posição `bottom: 270px`; estado `.ativo` troca
-  play→stop e pinta o fundo de verde).
+  play→stop e pinta o fundo de verde) e `#simul-speed-btn` (acelerador, chip com
+  multiplicador na mesma linha do botão).
 
 **Comportamento:** ao clicar em play com uma rota traçada, o simulador interpola a posição
-ao longo de `currentRouteCoords` (a `10 km/h`), calcula o heading com `calcBearing()` e
-dispara o mesmo fluxo de navegação via `atualizarPosicaoVeiculo()` (velocímetro, instruções,
-voz, follow 3D). O GPS real é pausado (`clearWatch`) durante a simulação e retomado no stop;
-ao chegar ao fim, velocidade zera e mostra "Simulação concluída!".
+ao longo de `currentRouteCoords`, calcula o heading com `calcBearing()` e dispara o mesmo
+fluxo de navegação via `atualizarPosicaoVeiculo()` (velocímetro, instruções, voz, follow 3D).
+O GPS real é pausado (`clearWatch`) durante a simulação e retomado no stop; ao chegar ao fim,
+velocidade zera e mostra "Simulação concluída!".
+
+**Acelerador:** o chip `#simul-speed-btn` alterna o multiplicador `simulFator` em
+`[1, 2, 4, 8]x` (labels `1x/2x/4x/8x`). A velocidade efetiva simulada é `VEL_SIM * simulFator`
+(10, 20, 40 ou 80 km/h), usada tanto no deslocamento por tick quanto no velocímetro.
 
 Ver também o arquivo Git: as alterações atuais estão **em working directory (não commitadas)**.
 O último commit efetivo é provavelmente `ab91754` (ver `git log`).
