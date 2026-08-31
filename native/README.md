@@ -64,6 +64,27 @@ primeiro plano. O `ForegroundLocationService` garante isto:
   `env(safe-area-inset-top/bottom)` — o card de navegação fica abaixo do notch/câmera e o
   painel inferior longe dos botões virtuais/gestos do Android.
 
+## Pillar 6 — captura por ACESSIBILIDADE (99/Uber em 1º plano)
+- `FlowPilotAccessibilityService` + `res/xml/accessibility_service_config.xml`: quando o app
+  de corrida está em primeiro plano (a notificação nem sempre cobre o aceite), o serviço
+  percorre a árvore de `AccessibilityNodeInfo` da tela e detecta:
+  - **Coleta** → "Nova corrida / Coleta / Ponto de embarque / Buscar passageiro" → injeta
+    `?coleta=<endereço>`;
+  - **Viagem** → "Deslize para iniciar / Em viagem / Destino" → injeta `?viagem=1&destino=`.
+- O endereço segue o MESMO caminho do notificador (`acaoCaptura` → `MainActivity` →
+  `evaluateJavascript` → `FlowPilot.setEndereco*`), ou seja, chega direto no frontend JS.
+- **Dedup:** mesmo (pacote, fase, endereço) não é reinjetado em 30 s (evita dupla com o
+  notificador).
+- **Logs (Logcat):** tag `FlowPilot_Accessibility` — cada evento, decisão de heurística,
+  texto extraído e injeção ficam registrados.
+- **Permissão (1ª vez):** Configurações → Acessibilidade → "FlowPilot — Captura de endereços
+  (99/Uber)" → Ativar. O usuário vê a descrição do que o serviço faz.
+
+> Nota Play: o uso de acessibilidade aqui é legítimo e declarado (não coleta dados pessoais
+> fora do fluxo de corrida), mas a revisão de política da Play Store exige justificar o uso.
+> Pacotes observados: `com.taxis99`, `com.taxis99.driver`, `com.peopleapps`,
+> `com.ubercab.driver`, `com.ubercab` — conferir com as versões atuais.
+
 ---
 
 ## Como buildar (WIN — já validado nesta máquina)
@@ -91,8 +112,9 @@ Kotlin plugin 2.1.0, `compileSdk 37` / `targetSdk 36` (plataforma `android-37.0`
 `play-services-location:21.0.1`, `core-ktx` já nas dependências do app.
 
 4. Instalar o APK no celular (Android Studio → Run, ou `adb install`):
-   - 1ª vez: autorizar **localização "Permitir o tempo todo"**, **Exibir sobre outros apps**
-     e **Acesso à notificação** (Settings → Apps → FlowPilot).
+   - 1ª vez: autorizar **localização "Permitir o tempo todo"**, **Exibir sobre outros apps**,
+     **Acesso à notificação** e **Acessibilidade → "FlowPilot — Captura de endereços"**
+     (Settings → Acessibilidade → FlowPilot → Ativar).
 5. Configurar `config.local.js` com a chave TomTom (a mesma da web serve).
 
 > Permissões GPS/USB: para testar, ative "Depuração USB" no celular e use `adb install

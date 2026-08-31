@@ -4,4 +4,6 @@
     <string name="title_activity_main">FlowPilot</string>
     <string name="package_name">com.flowpilot.app</string>
     <string name="custom_url_scheme">com.flowpilot.app</string>
+    <string name="accessibility_service_label">FlowPilot — Captura de endereços (99/Uber)</string>
+    <string name="accessibility_service_description">Lê a tela dos apps de corrida (99 e Uber) para detectar quando uma corrida é aceita e repassar o endereço de coleta/destino para o FlowPilot traçar a rota automaticamente. Nenhum dado fora desse fluxo é lido ou armazenado.</string>
 </resources>

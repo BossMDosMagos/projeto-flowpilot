@@ -430,6 +430,18 @@ mudança (ou rodar o sync). Detalhes e avisos (pacotes da 99 são heurística) e
   `MainActivity` 1×/sessão quando a corrida começa; ao voltar da tela de permissão o
   `onResume` sobe o overlay se a corrida estiver ativa.
 
+### Captura por Acessibilidade (99/Uber em 1º plano)
+- `FlowPilotAccessibilityService` (+`res/xml/accessibility_service_config.xml`, pacotes
+  99/Uber via `packageNames`): lê a árvore de `AccessibilityNodeInfo` da tela
+  (WINDOW_STATE/CONTENT_CHANGED, VIEW_CLICKED/SCROLLED), detecta **coleta** ("nova corrida",
+  "coleta", "embarque"...) ou **viagem** ("deslize para iniciar", "em viagem", "destino"...),
+  extrai o endereço (regex com rótulo + fallback linha que "parece endereço") e injeta via
+  `acaoCaptura` → MainActivity → JS (mesmo caminho/AndroidBridge do notificador). Dedupe de
+  30 s por (pacote, fase, endereço). Logs no Logcat com tag **`FlowPilot_Accessibility`**.
+- Registrado no manifest (permissão `BIND_ACCESSIBILITY_SERVICE`, intent-filter
+  `AccessibilityService`, meta-data `@xml/accessibility_service_config`, label/description
+  em `values/strings.xml`). Ativação manual em Settings → Acessibilidade.
+
 ### Avisos para produção
 - **Acesso à notificação** exige permissão manual do usuário (Android Settings →
   Acesso especial → Acesso à notificação) e uso legítimo (não ler dados pessoais fora do
