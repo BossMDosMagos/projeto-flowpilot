@@ -213,15 +213,22 @@ object FlowActions {
      * Sobe o widget flutuante (OverlayService, TYPE_APPLICATION_OVERLAY — visível por cima de
      * qualquer app: 99, Uber, Waze, Mapas...). Se a permissão "Exibir sobre outros apps"
      * (ACTION_MANAGE_OVERLAY_PERMISSION) não estiver concedida, o serviço nem é criado — quem
-     * encaminha o usuário para a tela de permissão é a MainActivity (pedirPermissaoOverlaySePreciso).
+     * encaminha o usuário para a tela de permissão é a MainActivity (garantirOverlay).
      */
     fun startOverlay(ctx: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
             return
         }
         try {
-            ctx.startService(Intent(ctx, OverlayService::class.java))
+            // foreground = sistema não mata a janela de velocidade enquanto o motorista
+            // usa 99/Uber/Maps; se o SO for >= O, todo serviço em foreground PRECISA
+            // chamar startForeground() nos primeiros 5 s
+            ctx.startForegroundService(Intent(ctx, OverlayService::class.java))
         } catch (t: Throwable) {
+            try {
+                ctx.startService(Intent(ctx, OverlayService::class.java))
+            } catch (t2: Throwable) {
+            }
         }
     }
 }

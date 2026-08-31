@@ -1,7 +1,12 @@
 package com.flowpilot.app
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -12,15 +17,17 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
 
 /**
- * 4. Overlay flutuante que fica POR CIMA do app da 99 durante a corrida.
- * Requer permissão SYSTEM_ALERT_WINDOW.
+ * 4. Overlay flutuante que fica POR CIMA de todo o Android (99/Uber/Maps/home).
  *
- * Conteúdo (compacto, pensado para dirigir):
- *  - velocidade (alimentado pela WebView quando o app está em 2º plano? O ideal é o mesmo
- *    ForegroundLocationService re-passar a posição; aqui lemos do FlowBridge)
- *  - botões: [Alternar Etapa] [Centralizar] [Abrir FlowPilot] [Fechar]
+ * - Roda como FOREGROUND SERVICE: exibe uma notificação discreta e o SO não mata a
+ *   janela de velocidade enquanto o motorista está em outro app.
+ * - Usa TYPE_APPLICATION_OVERLAY no WindowManager para desenhar fora da WebView.
+ * - Se a permissão "Exibir sobre outros apps" (ACTION_MANAGE_OVERLAY_PERMISSION) faltar
+ *   nesta chamada, o serviço NÃO morre nem dá crash: apenas não infla a view e aguarda
+ *   um novo start — a MainActivity (re)inicia assim que a permissão for concedida.
  */
 class OverlayService : Service() {
 
@@ -33,6 +40,9 @@ class OverlayService : Service() {
     private var rodando = false
 
     companion object {
+        private const val CHANNEL_ID = "flowpilot_overlay"
+        private const val NOTIF_ID = 11
+
         private val OVERLAY_TYPE =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
@@ -40,14 +50,61 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (!Settings.canDrawOverlays(this)) {
-            stopSelf()
+        criarCanal()
+        // Foreground imediato (obrigatório em O+ ao usar startForegroundService)
+        iniciarForeground()
+        // NÃO morre se faltar a permissão: apenas não desenha a view por enquanto.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             return
         }
         inflarOverlay()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Reinfla com segurança caso a permissão tenha sido concedida depois que o
+        // serviço começou (onCreate retornou sem view) ou após o usuário revogar/conceder.
+        if (raiz == null && Settings.canDrawOverlays(this)) inflarOverlay()
+        return START_STICKY
+    }
+
+    private fun criarCanal() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "FlowPilot — widget flutuante",
+                    NotificationManager.IMPORTANCE_MIN
+                ).apply { setShowBadge(false) }
+            )
+        }
+    }
+
+    private fun iniciarForeground() {
+        val abrir = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notificacao: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("FlowPilot")
+            .setContentText("Widget de velocidade ativo — " + FlowBridge.stageTitle(this))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentIntent(abrir)
+            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, notificacao, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, notificacao)
+        }
+    }
+
     private fun inflarOverlay() {
+        // protege contra duplo addView (ex.: onStartCommand repetido)
+        if (raiz != null) return
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
         raiz = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater)
@@ -81,8 +138,13 @@ class OverlayService : Service() {
             stopSelf()
         }
 
-        wm?.addView(raiz, params)
-        atualizarCadaSegundo()
+        runCatching { wm?.addView(raiz, params) }
+        if (raiz?.parent == null) {
+            // falhou (ex.: permissão revogada entre a checagem e o addView)
+            raiz = null
+        } else {
+            atualizarCadaSegundo()
+        }
     }
 
     /** Único toque de emergência no widget: alterna Coleta ↔ Viagem. */
