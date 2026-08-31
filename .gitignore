@@ -4,4 +4,5 @@ config.local.js
 # Gerados pelo Capacitor / build
 node_modules/
 www/
+*.apk
 *.log

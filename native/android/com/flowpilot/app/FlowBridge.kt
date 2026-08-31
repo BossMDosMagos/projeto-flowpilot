@@ -1,8 +1,11 @@
 package com.flowpilot.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
+import android.provider.Settings
 import org.json.JSONObject
 
 /**
@@ -182,6 +185,12 @@ object FlowBridge {
 /** Liga o contador de GPS (obrigatório) e, opcionalmente, o overlay flutuante. */
 object FlowActions {
     fun startServices(ctx: Context, comOverlay: Boolean = true) {
+        startGps(ctx)
+        if (comOverlay) startOverlay(ctx)
+    }
+
+    /** Sobe o serviço de GPS em primeiro plano (fonte de verdade da quilometragem). */
+    fun startGps(ctx: Context) {
         try {
             ctx.startForegroundService(
                 Intent(ctx, ForegroundLocationService::class.java)
@@ -189,11 +198,21 @@ object FlowActions {
         } catch (t: Throwable) {
             ctx.startService(Intent(ctx, ForegroundLocationService::class.java))
         }
-        if (comOverlay) {
-            try {
-                ctx.startService(Intent(ctx, OverlayService::class.java))
-            } catch (t: Throwable) {
-            }
+    }
+
+    /**
+     * Sobe o widget flutuante (OverlayService, TYPE_APPLICATION_OVERLAY — visível por cima de
+     * qualquer app: 99, Uber, Waze, Mapas...). Se a permissão "Exibir sobre outros apps"
+     * (ACTION_MANAGE_OVERLAY_PERMISSION) não estiver concedida, o serviço nem é criado — quem
+     * encaminha o usuário para a tela de permissão é a MainActivity (pedirPermissaoOverlaySePreciso).
+     */
+    fun startOverlay(ctx: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+            return
+        }
+        try {
+            ctx.startService(Intent(ctx, OverlayService::class.java))
+        } catch (t: Throwable) {
         }
     }
 }

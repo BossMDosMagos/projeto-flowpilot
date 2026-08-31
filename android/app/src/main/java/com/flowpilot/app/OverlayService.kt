@@ -29,6 +29,8 @@ class OverlayService : Service() {
     private var proxManeuver: TextView? = null
     private var vel: TextView? = null
     private var eta: TextView? = null
+    @Volatile
+    private var rodando = false
 
     companion object {
         private val OVERLAY_TYPE =
@@ -105,8 +107,9 @@ class OverlayService : Service() {
     }
 
     private fun atualizarCadaSegundo() {
+        rodando = true
         Thread {
-            while (true) {
+            while (rodando) {
                 try {
                     Thread.sleep(1000)
                     runOnUiThread {
@@ -127,6 +130,7 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        rodando = false
         raiz?.let { runCatching { wm?.removeView(it) } }
         raiz = null
         super.onDestroy()

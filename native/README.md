@@ -49,6 +49,20 @@ primeiro plano. O `ForegroundLocationService` garante isto:
 - `OverlayService` + `SYSTEM_ALERT_WINDOW`: janela com velocidade, próxima manobra, ETA e botões
   [Alternar Etapa] [Abrir FlowPilot]. Desenha por cima de QUALQUER app (inclusive a 99),
   com `TYPE_APPLICATION_OVERLAY` no `WindowManager` — só existe dentro do APK compilado.
+- **Acionamento automático:** `app.js` chama `AndroidBridge.iniciarServicos()` sempre que uma
+  corrida começa (e `pararOverlay()` ao encerrar). Recomeça sozinho se você minimizar o app
+  ou abrir 99/Uber/Waze/Mapas.
+- **Permissão:** se "Exibir sobre outros apps" (`ACTION_MANAGE_OVERLAY_PERMISSION`) não estiver
+  concedida, a `MainActivity` abre as Configurações do Android (1× por sessão) quando a corrida
+  começa; ao voltar com a permissão liberada, o widget sobe na hora. Sem a permissão o serviço
+  não é criado (`OverlayService` faz `stopSelf`).
+
+## Pillar 5 — modo imersivo + safe areas (tela cheia limpa)
+- `MainActivity` usa **Immersive Sticky** (`WindowInsetsControllerCompat.hide(systemBars())`):
+  barra de status e navegação somem durante o uso; um swipe mostra as barras por alguns segundos.
+- A web roda em `viewport-fit=cover` (`index.html`) e o CSS usa
+  `env(safe-area-inset-top/bottom)` — o card de navegação fica abaixo do notch/câmera e o
+  painel inferior longe dos botões virtuais/gestos do Android.
 
 ---
 

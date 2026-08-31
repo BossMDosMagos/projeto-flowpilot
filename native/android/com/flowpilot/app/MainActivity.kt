@@ -3,11 +3,16 @@ package com.flowpilot.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.BridgeActivity
 import org.json.JSONObject
 
@@ -22,16 +27,69 @@ import org.json.JSONObject
  *    odômetro nunca fica "descoberto" enquanto o web ainda não carregou.
  * 4) Tratar ACTION_SEND (compartilhar da 99) e `acaoCaptura` dos serviços
  *    (`coleta=`/`destino=`/`etapa=`), injetando no JS sem recarregar.
+ * 5) Modo IMERSIVO (tela cheia, barras de sistema escondidas) + garantir a permissão
+ *    "Exibir sobre outros apps" para o OverlayService (widget flutuante acima de tudo).
  */
 class MainActivity : BridgeActivity() {
 
+    private var pediuOverlay = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        entrarModoImersivo()
         injetarBridge()
         pedirPermissoes()
         // REQUISITO CRÍTICO: o contador de km precisa estar de pé o tempo todo.
         FlowActions.startServices(this, comOverlay = false)
         tratarIntent(intent)
+    }
+
+    /** Reaplica o imersivo sempre que a janela volta a ter foco (gesto de swipe mostra as barras). */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) entrarModoImersivo()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Se o usuário acabou de conceder "Exibir sobre outros apps", sobe o widget flutuante
+        // (e, se ainda falta a permissão numa corrida ativa, pede uma vez por sessão).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            if (FlowBridge.estado(this) != "livre") pedirPermissaoOverlaySePreciso()
+        } else if (FlowBridge.estado(this) != "livre") {
+            FlowActions.startOverlay(this)
+        }
+    }
+
+    /**
+     * Modo imersivo STICKY: esconde barra de status e navegação enquanto o app está aberto
+     * (a UI fica 100% na tela; um swipe mostra as barras por alguns segundos e elas somem).
+     * O WebView vira edge-to-edge mesmo, e o CSS usa `env(safe-area-inset-*)` (o index.html
+     * já tem `viewport-fit=cover`) para respeitar o notch/câmera e a área de gestos.
+     */
+    private fun entrarModoImersivo() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+
+    /** Abre a tela "Exibir sobre outros apps" (configurações) — uma vez por sessão até conceder. */
+    private fun pedirPermissaoOverlaySePreciso() {
+        if (pediuOverlay) return
+        pediuOverlay = true
+        runOnUiThread {
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (t: Throwable) {
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -96,6 +154,8 @@ class MainActivity : BridgeActivity() {
     /** Injeta ?coleta/&destino/&etapa sem recarregar (JS direto) quando possível. */
     private fun abrirComQuery(query: String) {
         FlowActions.startServices(this)
+        // corrida começando pelo fluxo nativo (notificação da 99): garante o widget flutuante
+        pedirPermissaoOverlaySePreciso()
         val wv = bridge?.webView ?: return
         val serverUrl = bridge?.getServerUrl().orEmpty()
 
@@ -154,6 +214,7 @@ class MainActivity : BridgeActivity() {
         @JavascriptInterface
         fun iniciarServicos() {
             FlowActions.startServices(this@MainActivity)
+            pedirPermissaoOverlaySePreciso()
         }
 
         /** Chamado pelo web ao finalizar corrida: para o overlay (notificação segue no GPS). */

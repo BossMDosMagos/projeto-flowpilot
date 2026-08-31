@@ -2075,6 +2075,7 @@ function alvoCorrida() {
 // Pintar a linha de corrida no painel inferior (leitura, sem captura manual)
 function aplicarCorridaUI() {
   const estado = corrida.estado;
+  sincronizarWidgetNativo();
   btnCorridaStage.textContent = ROTULO_ESTADO[estado];
   btnCorridaStage.classList.toggle('embarque', estado === 'embarque');
   btnCorridaStage.classList.toggle('viagem', estado === 'viagem');
@@ -2327,6 +2328,20 @@ function enviarStatusNativo() {
       window.AndroidBridge.onStatusChanged(JSON.stringify(window.FlowPilot.buscarStatus()));
     } catch (e) {}
   }
+}
+
+// Liga/desliga o widget FLUTUANTE NATIVO (OverlayService → TYPE_APPLICATION_OVERLAY),
+// que fica visível por cima de outros apps (99, Uber, Waze, Mapas...) durante a corrida.
+// No browser/PWA não há AndroidBridge — tudo vira no-op.
+function sincronizarWidgetNativo() {
+  if (!window.AndroidBridge) return;
+  try {
+    if (corrida.estado === 'livre') {
+      if (typeof window.AndroidBridge.pararOverlay === 'function') window.AndroidBridge.pararOverlay();
+    } else {
+      window.AndroidBridge.iniciarServicos();
+    }
+  } catch (e) {}
 }
 
 window.FlowPilot = {

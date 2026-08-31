@@ -418,6 +418,18 @@ classifica **Nova corrida (coleta)** vs **Início de viagem (destino)** e injeta
 mudança (ou rodar o sync). Detalhes e avisos (pacotes da 99 são heurística) em
 `native/README.md`.
 
+### UI em tela cheia (pista)
+- **Immersive Sticky** na `MainActivity` (`WindowInsetsControllerCompat.hide(systemBars())`):
+  esconde barra de status e navegação; swipe mostra por uns segundos e some.
+- **Safe areas na web:** `index.html` usa `viewport-fit=cover`; `styles.css` aplica
+  `env(safe-area-inset-top/bottom)` (padding do body + `calc()` nos painéis fixos
+  top-bar/nav-instruction/bottom-panel/botões da trilha direita/mini-HUD/alerta).
+- **Widget flutuante nativo:** o `app.js` agora chama `AndroidBridge.iniciarServicos()` ao
+  começar corrida e `pararOverlay()` ao encerrar (antes nunca era acionado — por isso o
+  usuário só via o Mini-HUD interno). Permissão "Exibir sobre outros apps" é pedida pela
+  `MainActivity` 1×/sessão quando a corrida começa; ao voltar da tela de permissão o
+  `onResume` sobe o overlay se a corrida estiver ativa.
+
 ### Avisos para produção
 - **Acesso à notificação** exige permissão manual do usuário (Android Settings →
   Acesso especial → Acesso à notificação) e uso legítimo (não ler dados pessoais fora do
