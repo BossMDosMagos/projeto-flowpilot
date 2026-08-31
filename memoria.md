@@ -393,25 +393,30 @@ alvo da etapa:
 
 ---
 
-## 16. Módulo nativo (Android / Capacitor) — pendente de build
+## 16. Módulo nativo (Android / Capacitor) — APK de debug compila
 
-Scaffold em `native/` + `capacitor.config.json` (`appId: com.flowpilot.app`, `webDir: "."`).
-**Não compilado/testado aqui** (máquina atual sem Java/Android SDK). Build na sua máquina:
+Plataforma **gerada no repo** (`android/`) via Capacitor 8.5.0 — com `webDir: "www"`
+(Capacitor 8 não aceita `webDir: "."`), copiada por `scripts/copy-web.cjs`
+(`npm run web:www`) e sincronizada com `npm run sync:android`
+(genera `android/app/src/main/assets/public`). Build completo validado nesta máquina:
 
-1. `npx cap init "FlowPilot" "com.flowpilot.app" --web-dir .`
-2. `npx cap add android`; mesclar `native/AndroidManifest.xml` no manifest gerado
-   (permissões `ACCESS_FINE/BACKGROUND_LOCATION`, `FOREGROUND_SERVICE(_LOCATION)`,
-   `POST_NOTIFICATIONS`, `BIND_NOTIFICATION_LISTENER_SERVICE`, `SYSTEM_ALERT_WINDOW`,
-   `WAKE_LOCK`; intent-filter `ACTION_SEND text/plain`; 3 servicios).
-3. Copiar `native/android/**` → `android/app/src/main/java/com/flowpilot/app/` e os
-   `res/layout|drawable` → `res/`. `MainActivity.kt` injeta `AndroidBridge` na WebView
-   e trata `acaoCaptura` (coleta/destino/etapa) **sem recarregar** (JS direto na WebView,
-   fallback via URL); `ForegroundLocationService` mantém notificação
-   fixa + GPS; `NotificationListenerService` intercepta a notificação da 99, classifica
-   **Nova corrida (coleta)** vs **Início de viagem (destino)** e injeta sozinho;
-   `OverlayService` desenha o widget por cima do app da 99 com o único toque de emergência
-   (Alternar Etapa). Detalhes e avisos (pacotes da 99 são heurística) em
-   `native/README.md`.
+- Stack: Gradle wrapper 8.14.3, AGP 8.13.0, Kotlin plugin 2.1.0, Capacitor 8.5.0,
+  `compileSdk 37` / `targetSdk 36` (plataforma `android-37.0` instalada em
+  `C:\Android\Sdk`), `play-services-location:21.0.1`, JDK 21 (JBR 25 do Android Studio
+  não roda com o Gradle 8.14.3 — `winget install EclipseAdoptium.Temurin.21.JDK`).
+- Resultado: `android/app/build/outputs/apk/debug/app-debug.apk`.
+- Build no CLI: `npm run apk` (já seta `JAVA_HOME`/`ANDROID_HOME`), ou abrir `android/`
+  no Android Studio com Gradle JDK 21. Passos e avisos em `native/README.md`.
+
+Arquivos do scaffold em `native/`: `MainActivity.kt` injeta `AndroidBridge` na WebView
+e trata `acaoCaptura` (coleta/destino/etapa) **sem recarregar** (JS direto na WebView,
+fallback via URL); `ForegroundLocationService` mantém notificação fixa + GPS de alta
+precisão + WakeLock; `NotificationListenerService` intercepta a notificação da 99,
+classifica **Nova corrida (coleta)** vs **Início de viagem (destino)** e injeta sozinho;
+`OverlayService` desenha o widget por cima do app da 99 com o único toque de emergência
+(Alternar Etapa). Fonte canônica é `native/` — copiar para `android/app/...` em cada
+mudança (ou rodar o sync). Detalhes e avisos (pacotes da 99 são heurística) em
+`native/README.md`.
 
 ### Avisos para produção
 - **Acesso à notificação** exige permissão manual do usuário (Android Settings →

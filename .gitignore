@@ -1,2 +1,7 @@
 # Chave de API local (NÃO commitar!)
 config.local.js
+
+# Gerados pelo Capacitor / build
+node_modules/
+www/
+*.log

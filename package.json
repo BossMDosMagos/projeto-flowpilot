@@ -1,0 +1,28 @@
+{
+  "name": "projeto-flowpilot",
+  "version": "1.0.0",
+  "description": "FlowPilot — navegação para motoristas de aplicativo (PWA + app Capacitor/Android)",
+  "main": "app.js",
+  "scripts": {
+    "web:www": "node scripts/copy-web.cjs",
+    "sync:android": "npm run web:www && npx cap sync android",
+    "apk": "set JAVA_HOME=C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.12.101-hotspot&& set ANDROID_HOME=C:\\Android\\Sdk&& cd android && gradlew.bat :app:assembleDebug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BossMDosMagos/projeto-flowpilot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/BossMDosMagos/projeto-flowpilot/issues"
+  },
+  "homepage": "https://github.com/BossMDosMagos/projeto-flowpilot#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  }
+}

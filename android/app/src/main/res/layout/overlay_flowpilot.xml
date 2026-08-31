@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shape do overlay flutuante (usa R.layout.overlay_flowpilot).
+  Estilo escuro, compacto, pensado para dirigir.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/ov_borda"
+    android:padding="10dp"
+    android:gravity="center_vertical">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/ov_vel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#3b82f6" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" km/h"
+            android:textColor="#94a3b8"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/ov_maneuver"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Siga a rota"
+        android:textColor="#ffffff"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/ov_eta"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ETA --:--"
+        android:textColor="#94a3b8"
+        android:textSize="11sp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/ov_btn_etapa"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Alternar Etapa"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/ov_btn_abrir"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Abrir FlowPilot"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/ov_btn_fechar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✕"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

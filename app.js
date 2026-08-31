@@ -2381,12 +2381,19 @@ setInterval(() => {
 
 // Espelha o odômetro/óleo do acumulador NATIVO a cada 5 s (dono da contagem no app).
 // Sem isso, após voltar do 2º plano a interface mostraria números de antes da viagem.
+// Também trata a corrida da inicialização: se a ponte (addJavascriptInterface) ainda não
+// existia quando carregarHodometro() rodou, ela passa a ser detectada aqui em tempo real —
+// evitando que o web conte km em dobro nos primeiros segundos de uso.
 setInterval(() => {
-  if (nativoAtivo) {
+  const bridgeOk = !!(window.AndroidBridge && typeof window.AndroidBridge.getStatus === 'function');
+  if (bridgeOk) {
+    nativoAtivo = true;
     try {
       sincronizarOdometroNativo(true);
       enviarStatusNativo();
     } catch (e) {}
+  } else {
+    nativoAtivo = false;
   }
 }, 5000);
 

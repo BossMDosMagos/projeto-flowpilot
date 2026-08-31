@@ -1,7 +1,7 @@
 {
   "appId": "com.flowpilot.app",
   "appName": "FlowPilot",
-  "webDir": ".",
+  "webDir": "www",
   "server": {
     "androidScheme": "https"
   },

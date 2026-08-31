@@ -1,8 +1,8 @@
 # FlowPilot — Módulo nativo (Android / Capacitor)
 
-> **Importante:** este scaffold NÃO foi compilado/testado nesta máquina (sem Java/SDK aqui).
-> É o ponto de partida para você buildar no **Android Studio** e ajustar aos detalhes do seu fluxo.
-> Referências de pacote da 99: os textos/`package` devem ser conferidos na versão atual do app — o `com.taxis99` é histórico e pode mudar.
+> **Status:** o APK de debug **compila** (`android/app/build/outputs/apk/debug/app-debug.apk`).
+> Ainda é "primeira versão": o texto/pacote da 99 devem ser conferidos na versão atual do app
+> (`com.taxis99` é histórico e pode mudar).
 
 ## Pillar 1 — fluxo de 2 estágios (Já no web)
 A máquina de estados (`livre / embarque / viagem`), a transição automática por GPS (30 m)
@@ -52,22 +52,37 @@ primeiro plano. O `ForegroundLocationService` garante isto:
 
 ---
 
-## Como buildar (na sua máquina, com Node + Android Studio)
-1. `npm i -g @capacitor/cli` (ou use `npx cap`).
-2. Instale o plugin de GPS de fundo:
-   `npm i @capacitor-community/background-geolocation` (opcional).
-3. `npx cap init "FlowPilot" "com.flowpilot.app" --web-dir .`
-4. `npx cap add android` (cria `android/`).
-5. Copie os arquivos deste diretório:
-   - `AndroidManifest.xml` → mescle com `android/app/src/main/AndroidManifest.xml`
-     (permissões, `intent-filter` de compartilhar, 3 serviços e o atributo principal em `MainActivity`).
-   - `android/*.kt` → `android/app/src/main/java/com/flowpilot/app/`
-     (classes: `MainActivity`, `NotificationListenerService`,
-     `ForegroundLocationService`, `OverlayService`, `FlowBridge`).
-6. `npx cap sync android`.
-7. Abra `android/` no Android Studio e rode.
-8. Permissão manual (1ª vez): Notificações → FlowPilot → "Acesso à notificação" (empacotador).
-   Overlay: Configurações → Apps → FlowPilot → "Sobre outros apps".
+## Como buildar (WIN — já validado nesta máquina)
+
+O projeto já contém a plataforma gerada (`android/`) e **um build de debug real foi feito**
+(`android/app/build/outputs/apk/debug/app-debug.apk`). Você precisa apenas de:
+
+1. Node (para copiar a web) + Android Studio (ou JDK 21) + Android SDK (`C:\Android\Sdk`).
+   - O Gradle do CLI precisa de **JDK 21** (o JBR 25 do Android Studio não roda com o
+     Gradle 8.14.3): `winget install --id EclipseAdoptium.Temurin.21.JDK`.
+2. Preparar o `www/` (o Capacitor 8 não aceita `webDir: "."`) e sincronizar assets:
+   ```
+   npm run sync:android
+   ```
+   (copia index/app/styles/sw/manifest/config.local.js/icons para `android/app/src/main/assets/public`).
+3. Buildar o APK de debug:
+   ```
+   npm run apk
+   ```
+   → `android/app/build/outputs/apk/debug/app-debug.apk`. Ou abra a pasta `android/` no
+   Android Studio e clique Run (deixe o Gradle JDK apontando para um JDK 21).
+
+Stack de versões (fixadas e testadas): Gradle wrapper 8.14.3, AGP 8.13.0, Capacitor 8.5.0,
+Kotlin plugin 2.1.0, `compileSdk 37` / `targetSdk 36` (plataforma `android-37.0` instalada),
+`play-services-location:21.0.1`, `core-ktx` já nas dependências do app.
+
+4. Instalar o APK no celular (Android Studio → Run, ou `adb install`):
+   - 1ª vez: autorizar **localização "Permitir o tempo todo"**, **Exibir sobre outros apps**
+     e **Acesso à notificação** (Settings → Apps → FlowPilot).
+5. Configurar `config.local.js` com a chave TomTom (a mesma da web serve).
+
+> Permissões GPS/USB: para testar, ative "Depuração USB" no celular e use `adb install
+> app-debug.apk` (Android Debug Bridge, vem no `C:\Android\Sdk\platform-tools`).
 
 ## Compartilhando endereço via ACTION_SEND
 Caminho alternativo (manual, via INTENT — não é usado na pista): o manifest declara o
