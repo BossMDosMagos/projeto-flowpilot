@@ -45,8 +45,8 @@ html, body {
   background: #e8eaed;
   /* Safe area: garante que o conteúdo NUNCA fique colado no notch/câmera (topo)
      ou atrás dos botões de navegação/gestos (baixo) em tela cheia (viewport-fit=cover). */
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: var(--sa-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--sa-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 /* ============================================
@@ -66,7 +66,7 @@ html, body {
    ============================================ */
 #top-bar {
   position: fixed;
-  top: calc(12px + env(safe-area-inset-top, 0px));
+  top: calc(12px + var(--sa-top, env(safe-area-inset-top, 0px)));
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
@@ -169,7 +169,7 @@ html, body {
 #locate-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(210px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(330px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -218,7 +218,7 @@ html, body {
 #theme-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(270px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(390px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -254,7 +254,7 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #simul-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(330px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(450px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -285,7 +285,7 @@ body.noturno #theme-btn .icon-moon { display: none; }
 #simul-speed-btn {
   position: fixed;
   right: 72px;
-  bottom: calc(330px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(450px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   min-width: 50px;
   height: 50px;
@@ -327,7 +327,7 @@ body.sem-simulador #simul-speed-btn {
 #traffic-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(390px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(510px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -359,7 +359,7 @@ body.sem-simulador #simul-speed-btn {
 #settings-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(450px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(570px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1000;
   width: 50px;
   height: 50px;
@@ -634,7 +634,7 @@ html.amoled body.noturno {
   position: fixed;
   left: 50%;
   transform: translateX(-50%) translateY(10px);
-  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(270px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1500;
   width: calc(100% - 24px);
   max-width: 420px;
@@ -693,7 +693,7 @@ body:not(.rota-ativa) #nav-instruction {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  top: calc(12px + env(safe-area-inset-top, 0px));
+  top: calc(12px + var(--sa-top, env(safe-area-inset-top, 0px)));
   z-index: 1000;
   width: calc(100% - 24px);
   max-width: 420px;
@@ -799,7 +799,7 @@ body:not(.rota-ativa) #nav-instruction {
    ============================================ */
 #bottom-panel {
   position: fixed;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(12px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
@@ -1125,7 +1125,7 @@ body:not(.rota-ativa) #nav-instruction {
 .hud-mini {
   position: fixed;
   right: 16px;
-  bottom: calc(258px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(378px + var(--sa-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 1400;
   display: flex;
   align-items: center;

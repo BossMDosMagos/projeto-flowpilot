@@ -422,8 +422,14 @@ mudança (ou rodar o sync). Detalhes e avisos (pacotes da 99 são heurística) e
 - **Immersive Sticky** na `MainActivity` (`WindowInsetsControllerCompat.hide(systemBars())`):
   esconde barra de status e navegação; swipe mostra por uns segundos e some.
 - **Safe areas na web:** `index.html` usa `viewport-fit=cover`; `styles.css` aplica
-  `env(safe-area-inset-top/bottom)` (padding do body + `calc()` nos painéis fixos
-  top-bar/nav-instruction/bottom-panel/botões da trilha direita/mini-HUD/alerta).
+  `var(--sa-top/--sa-bottom, env(safe-area-inset-top/bottom))` (padding do body + `calc()`
+  nos painéis fixos top-bar/nav-instruction/bottom-panel/botões da trilha direita/
+  mini-HUD/alerta). Como o WebView costuma reportar `env()` = 0 no Android, o nativo agora
+  informa o recorte real via `AndroidBridge.getSafeArea()` (`WindowInsetsCompat` +
+  `displayCutout.safeInset*`, em dp) e o `app.js` aplica em `--sa-*` (na detecção do bridge
+  e no poll de 5 s). Coluna de botões da trilha direita SUBIDA (+120 px: locate 330,
+  theme 390, simul 450, traffic 510, settings 570; hud-mini 378; alerta 270) para não
+  ficar atrás do painel inferior.
 - **Widget flutuante nativo:** o `app.js` agora chama `AndroidBridge.iniciarServicos()` ao
   começar corrida e `pararOverlay()` ao encerrar (antes nunca era acionado — por isso o
   usuário só via o Mini-HUD interno). Permissão "Exibir sobre outros apps" é pedida pela

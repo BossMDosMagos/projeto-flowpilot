@@ -246,5 +246,36 @@ class MainActivity : BridgeActivity() {
             o.put("kmAtual", FlowBridge.totalKm(this@MainActivity).toDouble())
             return o.toString()
         }
+
+        /**
+         * Safe area REAL do display em dp (CSS px == dp). Com o modo imersivo escondendo as
+         * barras, o `env(safe-area-inset-*)` do WebView costuma vir 0 — então o nativo informa
+         * o recorte do notch/câmera (topo) e a área de gestos/navegação (baixo) direto ao JS,
+         * que aplica como CSS var (`--sa-top`, `--sa-bottom`) nos painéis fixos.
+         */
+        @JavascriptInterface
+        fun getSafeArea(): String {
+            var top = 0
+            var bottom = 0
+            try {
+                val root = window.decorView.rootWindowInsets
+                if (root != null) {
+                    val wi = WindowInsetsCompat.toWindowInsetsCompat(root)
+                    val dc = wi.displayCutout
+                    if (dc != null) {
+                        top = maxOf(top, dc.safeInsetTop)
+                        bottom = maxOf(bottom, dc.safeInsetBottom)
+                    }
+                    top = maxOf(top, wi.getInsets(WindowInsetsCompat.Type.statusBars()).top)
+                    bottom = maxOf(bottom, wi.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
+                }
+            } catch (t: Throwable) {
+            }
+            val d = resources.displayMetrics.density
+            val o = JSONObject()
+            o.put("top", top / d)
+            o.put("bottom", bottom / d)
+            return o.toString()
+        }
     }
 }

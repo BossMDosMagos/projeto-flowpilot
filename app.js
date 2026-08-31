@@ -1567,7 +1567,9 @@ function numeroOu(v, def) {
 
 function carregarHodometro() {
   nativoAtivo = !!(window.AndroidBridge && typeof window.AndroidBridge.getStatus === 'function');
+
   if (nativoAtivo) {
+    aplicarSafeAreaNativa();
     // fonte de verdade é o serviço nativo: adota os valores dele (odômetro, trips, óleo)
     sincronizarOdometroNativo(true);
     return;
@@ -2321,6 +2323,19 @@ function atualizarPreviewNotificacao() {
   if (cfgStatusNotificacao) cfgStatusNotificacao.textContent = textoStatusNotificacao();
 }
 
+// Safari/edge cases: no Android o env() pode vir 0 mesmo com o notch — o app nativo
+// informa o recorte real via AndroidBridge.getSafeArea() (em dp == px CSS).
+function aplicarSafeAreaNativa() {
+  try {
+    if (!window.AndroidBridge || typeof window.AndroidBridge.getSafeArea !== 'function') return;
+    const s = JSON.parse(window.AndroidBridge.getSafeArea());
+    const top = Math.max(0, parseFloat(s.top) || 0);
+    const bottom = Math.max(0, parseFloat(s.bottom) || 0);
+    document.documentElement.style.setProperty('--sa-top', top + 'px');
+    document.documentElement.style.setProperty('--sa-bottom', bottom + 'px');
+  } catch (e) {}
+}
+
 /* ---- Ponte JS ↔ Android (consome window.AndroidBridge do app nativo) ---- */
 function enviarStatusNativo() {
   if (window.FlowPilot && window.AndroidBridge && typeof window.AndroidBridge.onStatusChanged === 'function') {
@@ -2403,6 +2418,7 @@ setInterval(() => {
   const bridgeOk = !!(window.AndroidBridge && typeof window.AndroidBridge.getStatus === 'function');
   if (bridgeOk) {
     nativoAtivo = true;
+    aplicarSafeAreaNativa();
     try {
       sincronizarOdometroNativo(true);
       enviarStatusNativo();
