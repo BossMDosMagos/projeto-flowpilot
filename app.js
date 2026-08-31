@@ -1584,6 +1584,8 @@ function carregarHodometro() {
 
 // Lê o acumulador nativo (odômetro + Trip A/B + óleo) e espelha na interface.
 // Roda no carregamento e a cada 5 s — sem isso o web mostraria números velhos.
+// IMPORTANTE: enquanto o usuário estiver digitando num input de configurações, a
+// atualização automática NÃO pode sobrescrever o campo (senão o valor "se regenera").
 function sincronizarOdometroNativo(primeira) {
   if (!nativoAtivo) return;
   try {
@@ -1594,10 +1596,18 @@ function sincronizarOdometroNativo(primeira) {
     if (isFinite(s.tripB)) tripBKm = s.tripB;
     if (isFinite(s.kmTrocaBase)) kmUltimaTrocaOleo = s.kmTrocaBase;
     if (isFinite(s.intervaloTroca)) intervaloTrocaOleo = Math.max(0, s.intervaloTroca);
-    if (cfgKmAtual && isFinite(s.odometroTotal) && s.odometroTotal > 0) {
+    const ativo = document.activeElement;
+
+    // Só atualiza os campos textuais do modal se nenhum deles estiver com foco (digitação).
+    if (cfgKmAtual && ativo !== cfgKmAtual && isFinite(s.odometroTotal) && s.odometroTotal > 0) {
       cfgKmAtual.value = Math.round(s.odometroTotal) || '';
     }
-    if (primeira || s.odometroTotal >= 0) atualizarPainelManutencao();
+    if (cfgIntervalo && ativo !== cfgIntervalo && isFinite(s.intervaloTroca) && s.intervaloTroca > 0) {
+      cfgIntervalo.value = Math.round(s.intervaloTroca) || '';
+    }
+    if (primeira || s.odometroTotal >= 0) {
+      if (ativo !== cfgKmAtual && ativo !== cfgIntervalo) atualizarPainelManutencao();
+    }
   } catch (e) {}
 }
 

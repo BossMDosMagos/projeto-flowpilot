@@ -160,6 +160,12 @@ class ForegroundLocationService : Service() {
         val ts0 = FlowBridge.ultTs(this)
         FlowBridge.guardarFix(this, loc.latitude, loc.longitude, System.currentTimeMillis())
 
+        // publica a velocidade corrente (usada pelo overlay flutuante e pela notificação)
+        FlowBridge.guardarVelocidade(
+            this,
+            if (loc.hasSpeed() && loc.speed >= 0f) loc.speed * 3.6f else 0f
+        )
+
         // primeiro fix: apenas vira referência
         if (lat0 == 0.0 && lon0 == 0.0 || ts0 <= 0L) return
 

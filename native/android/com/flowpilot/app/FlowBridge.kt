@@ -34,6 +34,7 @@ object FlowBridge {
     private const val KEY_ULT_LAT = "ult_lat"
     private const val KEY_ULT_LON = "ult_lon"
     private const val KEY_ULT_TS = "ult_ts"
+    private const val KEY_VEL = "velocidade_kmh"   // velocidade corrente (atualizada a cada fix)
 
     private var sPrefs: SharedPreferences? = null
 
@@ -149,6 +150,14 @@ object FlowBridge {
         e.putLong(KEY_ULT_TS, ts)
         e.apply()
     }
+
+    /** Atualiza a velocidade corrente (km/h) — chamada a cada fix de GPS pelo serviço. */
+    fun guardarVelocidade(ctx: Context, kmh: Float) {
+        prefs(ctx).edit().putFloat(KEY_VEL, kmh).apply()
+    }
+
+    /** Velocidade corrente em km/h (0 quando parado/sem sinal). */
+    fun velocidadeKmh(ctx: Context): Float = prefs(ctx).getFloat(KEY_VEL, 0f)
 
     fun ultLat(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LAT, 0f).toDouble()
     fun ultLon(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LON, 0f).toDouble()

@@ -113,7 +113,9 @@ class OverlayService : Service() {
                 try {
                     Thread.sleep(1000)
                     runOnUiThread {
-                        vel?.text = "%.0f".format(FlowBridge.totalKm(this@OverlayService)) // odômetro (trocar por velocidade real)
+                        // velocidade REAL (vinda do ForegroundLocationService via FlowBridge)
+                        vel?.text = "%.0f".format(FlowBridge.velocidadeKmh(this@OverlayService))
+                        // odômetro + dados da etapa na linha ETA (leitura do acumulador nativo)
                         eta?.text = FlowBridge.comporNotificacao(this@OverlayService)
                     }
                 } catch (t: InterruptedException) {
