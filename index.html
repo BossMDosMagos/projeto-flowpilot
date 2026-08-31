@@ -179,8 +179,12 @@
           <h4 class="settings-section-title">Dados e backup</h4>
           <div class="settings-row">
             <button id="btn-exportar" class="settings-btn" type="button">Exportar (.json)</button>
-            <button id="btn-importar" class="settings-btn" type="button">Importar</button>
-            <input type="file" id="cfg-arquivo-import" accept="application/json,.json" hidden>
+            <!-- label wrapper: abre o seletor de arquivo nativamente (mais confiável no WebView
+                 do Android do que um click() programático num input hidden) -->
+            <label for="cfg-arquivo-import">
+              <button id="btn-importar" class="settings-btn" type="button">Importar</button>
+            </label>
+            <input type="file" id="cfg-arquivo-import" accept="application/json,.json,.text/plain" style="display:none">
           </div>
           <div class="settings-trip-row">
             <span class="settings-field-label" style="margin:0">Trips</span>

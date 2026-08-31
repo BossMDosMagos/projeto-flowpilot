@@ -116,7 +116,6 @@ const cfgSimulador = $('cfg-simulador');
 const cfgTripAValor = $('cfg-trip-a-valor');
 const cfgTripBValor = $('cfg-trip-b-valor');
 const btnExportar = $('btn-exportar');
-const btnImportar = $('btn-importar');
 const cfgArquivoImport = $('cfg-arquivo-import');
 const btnResetTripA = $('btn-reset-trip-a');
 const btnResetTripB = $('btn-reset-trip-b');
@@ -1996,8 +1995,9 @@ btnExportar.addEventListener('click', () => {
   }
 });
 
-btnImportar.addEventListener('click', () => cfgArquivoImport.click());
-
+// O botão Importar agora é um <label for="cfg-arquivo-import">: abre o seletor de arquivo
+// nativamente (confiável no WebView do Android, onde click() programático num input
+// hidden/display:none costuma ser bloqueado).
 cfgArquivoImport.addEventListener('change', (e) => {
   const arquivo = e.target.files && e.target.files[0];
   if (!arquivo) return;
