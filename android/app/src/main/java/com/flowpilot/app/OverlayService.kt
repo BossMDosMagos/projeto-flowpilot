@@ -13,9 +13,6 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
-import android.text.Spannable
-import android.text.SpannableStringBuilder
-import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -44,13 +41,13 @@ class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var vel: TextView? = null
+    private var digitos = arrayOfNulls<TextView>(3)   // as 3 células fixas do LCD (ov_d0..ov_d2)
     private var sufixo: TextView? = null
     private var params: WindowManager.LayoutParams? = null
     @Volatile
     private var rodando = false
     private var corAcesa = Color.parseColor("#00FF88")
-    private var corFantasma = Color.argb(45, 0, 255, 136)
+    private var corFantasma = Color.argb(22, 0, 255, 136)
 
     companion object {
         private const val CHANNEL_ID = "flowpilot_overlay"
@@ -148,7 +145,9 @@ class OverlayService : Service() {
             y = 200
         }
 
-        vel = raiz?.findViewById(R.id.ov_vel)
+        digitos[0] = raiz?.findViewById(R.id.ov_d0)
+        digitos[1] = raiz?.findViewById(R.id.ov_d1)
+        digitos[2] = raiz?.findViewById(R.id.ov_d2)
         sufixo = raiz?.findViewById(R.id.ov_sufixo)
 
         // ===== ARRASTAR E SOLTAR =====
@@ -218,18 +217,18 @@ class OverlayService : Service() {
             ra.background?.mutate()?.setTint(fundo)
         }
 
-        // ===== NÚMERO =====
-        // guarda as cores para o render de 3 dígitos com efeito retrô
+        // ===== NÚMERO (3 células fixas de dígito) =====
+        // guarda as cores para o render com efeito retrô (fantasma bem fraquinho)
         corAcesa = cor
-        corFantasma = Color.argb(48, Color.red(cor), Color.green(cor), Color.blue(cor))
+        corFantasma = Color.argb(22, Color.red(cor), Color.green(cor), Color.blue(cor))
 
         val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 34f else FlowBridge.overlayFonte(contexto)
-        vel?.apply {
-            setTypeface(tf)
-            textSize = tamanhoFonte
-            // glow combinando com a cor (aplicado ao texto; o dígito fantasma é quase
-            // invisível por ser bem escuro)
-            setShadowLayer(8f, 0f, 0f, Color.argb(70, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa)))
+        val glow = Color.argb(70, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa))
+        for (i in 0..2) {
+            val d = digitos[i] ?: continue
+            d.setTypeface(tf)
+            d.textSize = tamanhoFonte
+            d.setShadowLayer(8f, 0f, 0f, glow)
         }
         sufixo?.apply {
             textSize = 10f * escala
@@ -245,26 +244,24 @@ class OverlayService : Service() {
     }
 
     /**
-     * Renderiza a velocidade em 3 dígitos (000..999) com efeito digital retro:
-     * os dígitos ainda "não preenchidos" (à esquerda do número real) aparecem
-     * desvanecidos, quase invisíveis, como um mostrador de LED de relógio antigo.
-     * Ex.: velocidade 7 → "007" (os dois zeros da esquerda apagados, o 7 aceso).
+     * Renderiza a velocidade dentro das 3 CÉLULAS FIXAS do mostrador (efeito LCD real):
+     * cada dígito preenche a sua própria matriz (que nunca se move). Os dígitos ainda
+     * "não preenchidos" (à esquerda do número real) aparecem como uma sombrinha bem
+     * fraquinha — o cristal apagado que ainda se vislumbra num display de LCD.
+     * Ex.: velocidade 7 → digitos "007": células 0 e 1 com fantasma, célula 2 com o 7 aceso.
      */
     private fun atualizarDígitos() {
-        val v = vel ?: return
         val kmh = FlowBridge.velocidadeKmh(this).toInt().coerceIn(0, 999)
         val texto = kmh.toString().padStart(3, '0')
         val significativos = kmh.toString().length
 
-        val sb = SpannableStringBuilder()
-        for (i in texto.indices) {
-            // dígitos significativos são os últimos `significativos` caracteres
+        for (i in 0..2) {
+            val d = digitos[i] ?: continue
+            // dígitos significativos são os últimos `significativos` (à direita)
             val acesso = i >= 3 - significativos
-            val cor = if (acesso) corAcesa else corFantasma
-            sb.append(texto[i])
-            sb.setSpan(ForegroundColorSpan(cor), i, i + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            d.setTextColor(if (acesso) corAcesa else corFantasma)
+            d.text = texto[i].toString()
         }
-        v.text = sb
     }
 
     /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
