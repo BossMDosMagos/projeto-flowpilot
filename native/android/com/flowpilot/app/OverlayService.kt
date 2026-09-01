@@ -13,29 +13,29 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
 /**
- * 4. Overlay flutuante que fica POR CIMA de todo o Android (99/Uber/Maps/home).
+ * 4. Bolha de velocidade flutuante do FlowPilot.
  *
  * - Roda como FOREGROUND SERVICE: exibe uma notificação discreta e o SO não mata a
- *   janela de velocidade enquanto o motorista está em outro app.
+ *   bolha de velocidade enquanto o motorista está em outro app (99/Uber/Maps).
  * - Usa TYPE_APPLICATION_OVERLAY no WindowManager para desenhar fora da WebView.
- * - Se a permissão "Exibir sobre outros apps" (ACTION_MANAGE_OVERLAY_PERMISSION) faltar
- *   nesta chamada, o serviço NÃO morre nem dá crash: apenas não infla a view e aguarda
- *   um novo start — a MainActivity (re)inicia assim que a permissão for concedida.
+ * - UI mínima: só a bolha circular com o número de velocidade (LED verde) + "km/h".
+ * - 100% ARRASTÁVEL: um OnTouchListener na raiz segue o dedo via updateViewLayout.
+ * - Se a permissão "Exibir sobre outros apps" faltar, NÃO morre nem dá crash: apenas
+ *   não infla a view e aguarda um novo start (a MainActivity re-inicia ao conceder).
  */
 class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var proxManeuver: TextView? = null
     private var vel: TextView? = null
-    private var eta: TextView? = null
+    private var params: WindowManager.LayoutParams? = null
     @Volatile
     private var rodando = false
 
@@ -62,7 +62,7 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Reinfla com segurança caso a permissão tenha sido concedida depois que o
-        // serviço começou (onCreate retornou sem view) ou após o usuário revogar/conceder.
+        // serviço começou (onCreate retornou sem view) ou após revogar/conceder.
         if (raiz == null && Settings.canDrawOverlays(this)) inflarOverlay()
         return START_STICKY
     }
@@ -73,7 +73,7 @@ class OverlayService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "FlowPilot — widget flutuante",
+                    "FlowPilot — bolha de velocidade",
                     NotificationManager.IMPORTANCE_MIN
                 ).apply { setShowBadge(false) }
             )
@@ -89,7 +89,7 @@ class OverlayService : Service() {
         val notificacao: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("FlowPilot")
-            .setContentText("Widget de velocidade ativo — " + FlowBridge.stageTitle(this))
+            .setContentText("Bolha de velocidade ativa — " + FlowBridge.stageTitle(this))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -110,7 +110,7 @@ class OverlayService : Service() {
         raiz = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater)
             .inflate(R.layout.overlay_flowpilot, null)
 
-        val params = WindowManager.LayoutParams(
+        params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             OVERLAY_TYPE,
@@ -125,18 +125,9 @@ class OverlayService : Service() {
         }
 
         vel = raiz?.findViewById(R.id.ov_vel)
-        eta = raiz?.findViewById(R.id.ov_eta)
-        proxManeuver = raiz?.findViewById(R.id.ov_maneuver)
 
-        raiz?.findViewById<Button>(R.id.ov_btn_etapa)?.setOnClickListener {
-            alternarEtapa()
-        }
-        raiz?.findViewById<Button>(R.id.ov_btn_abrir)?.setOnClickListener {
-            abrirFlowPilot()
-        }
-        raiz?.findViewById<Button>(R.id.ov_btn_fechar)?.setOnClickListener {
-            stopSelf()
-        }
+        // ===== ARRASTAR E SOLTAR =====
+        raiz?.setOnTouchListener(ArrastarListener())
 
         runCatching { wm?.addView(raiz, params) }
         if (raiz?.parent == null) {
@@ -147,25 +138,43 @@ class OverlayService : Service() {
         }
     }
 
-    /** Único toque de emergência no widget: alterna Coleta ↔ Viagem. */
-    private fun alternarEtapa() {
-        val proximo = if (FlowBridge.estado(this) == "embarque") "viagem" else "embarque"
-        enviarParaWeb("etapa=" + proximo)
-    }
+    /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
+    private inner class ArrastarListener : View.OnTouchListener {
+        private var dxInicial = 0f
+        private var dyInicial = 0f
+        private var xInicial = 0
+        private var yInicial = 0
+        private var arrastando = false
 
-    private fun enviarParaWeb(tipo: String) {
-        val i = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra("acaoCaptura", tipo)
-        }
-        startActivity(i)
-    }
+        override fun onTouch(v: View, e: MotionEvent): Boolean {
+            val p = params ?: return false
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    // guarda o ponto de toque e a posição atual da janela
+                    xInicial = p.x
+                    yInicial = p.y
+                    dxInicial = e.rawX
+                    dyInicial = e.rawY
+                    arrastando = true
+                    return true
+                }
 
-    private fun abrirFlowPilot() {
-        val i = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                MotionEvent.ACTION_MOVE -> {
+                    if (!arrastando) return false
+                    // nova posição = inicial + deslocamento do dedo (em px)
+                    p.x = xInicial + (e.rawX - dxInicial).toInt()
+                    p.y = yInicial + (e.rawY - dyInicial).toInt()
+                    runCatching { wm?.updateViewLayout(v, p) }
+                    return true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    arrastando = false
+                    return true
+                }
+            }
+            return false
         }
-        startActivity(i)
     }
 
     private fun atualizarCadaSegundo() {
@@ -177,8 +186,6 @@ class OverlayService : Service() {
                     runOnUiThread {
                         // velocidade REAL (vinda do ForegroundLocationService via FlowBridge)
                         vel?.text = "%.0f".format(FlowBridge.velocidadeKmh(this@OverlayService))
-                        // odômetro + dados da etapa na linha ETA (leitura do acumulador nativo)
-                        eta?.text = FlowBridge.comporNotificacao(this@OverlayService)
                     }
                 } catch (t: InterruptedException) {
                     break
