@@ -123,9 +123,15 @@ class OverlayService : Service() {
         raiz = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater)
             .inflate(R.layout.overlay_flowpilot, null)
 
+        // O diâmetro é definido DIRETAMENTE no WindowManager.LayoutParams (não no
+        // layoutParams da view). Assim a janela tem o tamanho do círculo e o
+        // conteúdo não "colapsa" a bolha numa gota minúscula.
+        val escala = FlowBridge.overlayTamanho(this).let { if (it <= 0f) 1f else it }
+        val diametroPx = (92f * escala * resources.displayMetrics.density).toInt()
+
         params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            diametroPx,
+            diametroPx,
             OVERLAY_TYPE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -163,10 +169,14 @@ class OverlayService : Service() {
      * Aplica as preferências do painel lidas do FlowBridge (cor da fonte, cor do fundo,
      * tamanho e fonte DS-DIGIB). Chamada no inflate e sempre que o usuário muda
      * nas Configurações (via MainActivity.setOverlayPrefs -> instancia.aplicarPreferencias).
+     *
+     * O TAMANHO é aplicado no `params` do WindowManager (que define o diâmetro real) e,
+     * se a bolha já está na tela, chamamos updateViewLayout para redimensionar ao vivo.
      */
     private fun aplicarPreferencias() {
         val ra = raiz ?: return
         val contexto = this
+        val p = params ?: return
 
         // Fonte digital DS-DIGIB (fallback p/ monospace se algo falhar)
         var tf: Typeface? = null
@@ -181,30 +191,43 @@ class OverlayService : Service() {
         val cor = try { Color.parseColor(FlowBridge.overlayCor(contexto)) }
             catch (t: Throwable) { Color.parseColor("#00FF88") }
         val fundo = try { Color.parseColor(FlowBridge.overlayFundo(contexto)) }
-            catch (t: Throwable) { Color.parseColor("#E6000000") }
+            catch (t: Throwable) { Color.parseColor("#000000") }
 
-        // fundo da bolha
-        ra.background?.mutate()?.setTint(fundo)
-
-        // tamanho (escala aplicada ao círculo e ao número)
+        // ===== TAMANHO do círculo (no params do WindowManager, em px) =====
         val escala = FlowBridge.overlayTamanho(contexto).let { if (it <= 0f) 1f else it }
-        val diametro = (92f * escala).toInt()
-        val lp = ra.layoutParams
-        if (lp != null) {
-            lp.width = diametro
-            lp.height = diametro
-            ra.layoutParams = lp
+        val diametroPx = (92f * escala * resources.displayMetrics.density).toInt()
+        p.width = diametroPx
+        p.height = diametroPx
+
+        // ===== FUNDO da bolha =====
+        // Substitui a cor de preenchimento do shape (keep a borda discreta).
+        val bg = ra.background
+        if (bg is android.graphics.drawable.GradientDrawable) {
+            try {
+                val g = bg.mutate() as android.graphics.drawable.GradientDrawable
+                g.setColor(fundo)
+            } catch (t: Throwable) {
+                ra.background?.mutate()?.setTint(fundo)
+            }
+        } else {
+            ra.background?.mutate()?.setTint(fundo)
         }
 
+        // ===== NÚMERO =====
         vel?.apply {
             setTypeface(tf)
             setTextColor(cor)
             textSize = 34f * escala
-            // glow combinando com a cor
-            setShadowLayer(8f * escala, 0f, 0f, Color.argb(64, Color.red(cor), Color.green(cor), Color.blue(cor)))
+            // glow combinando com a cor (sombra suave, não estoura o círculo)
+            setShadowLayer(8f * escala, 0f, 0f, Color.argb(70, Color.red(cor), Color.green(cor), Color.blue(cor)))
         }
         sufixo?.apply {
             textSize = 10f * escala
+        }
+
+        // Redimensiona a janela ao vivo se já estiver na tela
+        if (ra.parent != null) {
+            runCatching { wm?.updateViewLayout(ra, p) }
         }
     }
 

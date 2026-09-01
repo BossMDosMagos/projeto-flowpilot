@@ -3,13 +3,14 @@
   Bolha de velocidade do FlowPilot (R.layout.overlay_flowpilot).
   Bolha circular discreta e 100% arrastável: apenas o número de velocidade
   (fonte DS-DIGIB sobre fundo escuro) mais o sufixo "km/h".
-  O tamanho (diâmetro) e as cores são aplicados dinamicamente pelo OverlayService
-  conforme as preferências do usuário (aplicarPreferencias).
+  O diâmetro do círculo é definido no WindowManager.LayoutParams pelo
+  OverlayService (aplicarPreferencias) — aqui a raiz apenas preenche (match_parent)
+  e centraliza o conteúdo.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ov_raiz"
-    android:layout_width="92dp"
-    android:layout_height="92dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
     android:background="@drawable/ov_bolha">
@@ -22,6 +23,7 @@
         android:textSize="34sp"
         android:textStyle="bold"
         android:includeFontPadding="false"
+        android:typeface="monospace"
         android:textColor="#00FF88"
         android:shadowColor="#1100FF66"
         android:shadowRadius="8"
@@ -34,6 +36,7 @@
         android:text="km/h"
         android:textSize="10sp"
         android:includeFontPadding="false"
+        android:typeface="monospace"
         android:textColor="#99FFFFFF"
         android:letterSpacing="0.15"
         android:gravity="center" />
