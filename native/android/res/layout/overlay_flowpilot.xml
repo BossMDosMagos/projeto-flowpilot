@@ -3,21 +3,25 @@
   Painel HUD do FlowPilot (R.layout.overlay_flowpilot).
 
   Container circular com fundo branco/cinza e borda VERMELHA (ov_hud).
-  ABSOLUTAMENTE TODO o texto usa a fonte DSEG14Modern-Bold (aplicada no
-  OverlayService via Typeface.createFromAsset) — incluindo o rótulo "ODO:",
-  "TRIP:", o símbolo "{ * }" e a unidade "KM/H".
+  ABSOLUTAMENTE TODO o texto (incluindo "{ * }", "ODO:", "TRIP:", números e
+  "KM/H") usa a fonte DSEG14Modern-Bold — aplicada no OverlayService via
+  Typeface.createFromAsset.
 
-  LINHAS (centralizadas verticalmente, uma por zona):
-    L1  ov_oil_alert      -> "{ * }" centralizado.
-    L2  ov_odo(mask+val)  -> texto CONTÍNUO "ODO:~~~~~" (inativo) + "ODO:76261" (ativo).
-    L3  ov_mask+ov_vel    -> 3 dígitos grandes centralizados (malha "~~~" + valor).
-    L4  ov_unit           -> "KM/H" logo abaixo dos dígitos.
-    L5  ov_trip(mask+val) -> texto CONTÍNUO "TRIP:~~~" (inativo) + "TRIP:626" (ativo).
+  LINHAS (centralizadas, com respiro ao redor do velocímetro gigante):
+    L1 ov_oil_alert      -> "{ * }" centralizado (pisca).
+    L2 ODO               -> rótulo "ODO:" COADO nos dígitos da máscara "~~~~~"
+                            (ativa, preta, alinhada à direita por gravity=end —
+                            o '0' cai sobre o último '~' da direita).
+    L3 ov_mask+ov_vel    -> 3 dígitos grandes: malha "~~~" + valor PRETO com
+                            gravity="end|center_vertical" (o '0' sobre o 3º '~').
+    L4 ov_unit           -> "KM/H" logo abaixo dos dígitos.
+    L5 TRIP              -> rótulo "TRIP:" COADO na máscara "~~~" (3 casas),
+                            valor ativo preto alinhado à direita.
 
-  As camadas de cada linha são idênticas (MESMA fonte, MESMO tamanho, MESMO texto
-  de comprimento) e sobrepostas em FrameLayout — o rótulo fica COLAADO nos dígitos.
-  Entre as linhas: marginBottom = 4dp para preencher a bola sem grudar nas bordas
-  nem esmagar o centro.
+  Alinhamento: NUNCA usar espaços como padding (espaço avança 200 na DSEG14 vs
+  816 de dígito — quebra o alinhamento). O valor é alinhado via gravity="end"
+  dentro de um FrameLayout cuja largura é definida pela máscara (que avança 816
+  por caractere, igual aos dígitos).
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ov_raiz"
@@ -32,59 +36,75 @@
         android:orientation="vertical"
         android:gravity="center_horizontal"
         android:paddingTop="6dp"
-        android:paddingBottom="6dp">
+        android:paddingBottom="16dp">
 
         <!-- L1: ALERTA DE ÓLEO -->
         <TextView
             android:id="@+id/ov_oil_alert"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
+            android:layout_marginBottom="2dp"
             android:text="{ * }"
             android:textSize="16sp"
             android:includeFontPadding="false"
             android:textColor="#CC0000" />
 
-        <!-- L2: ODÔMETRO TOTAL (texto contínuo "ODO:" + dígitos) -->
+        <!-- L2: ODÔMETRO TOTAL — rótulo colado na máscara de 5 casas -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/ov_odo_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ODO:"
+                android:textSize="14sp"
+                android:includeFontPadding="false"
+                android:textColor="#000000" />
+
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+
+                <!-- camada inativa/fixa: "~~~~~" (5 colunas de malha) -->
+                <TextView
+                    android:id="@+id/ov_odo_mask"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="~~~~~"
+                    android:textSize="14sp"
+                    android:includeFontPadding="false"
+                    android:textColor="#25000000"
+                    android:gravity="end"
+                    android:shadowColor="@android:color/transparent"
+                    android:shadowRadius="0" />
+
+                <!-- camada ativa: valor preto, alinhado à direita sobre a máscara -->
+                <TextView
+                    android:id="@+id/ov_odo"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:text="0"
+                    android:textSize="14sp"
+                    android:includeFontPadding="false"
+                    android:textColor="#000000"
+                    android:gravity="end|center_vertical"
+                    android:shadowColor="@android:color/transparent"
+                    android:shadowRadius="0" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- L3: VELOCÍMETRO — 3 dígitos grandes (malha "~~~" + valor à direita) -->
         <FrameLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="4dp">
 
-            <!-- camada inativa: "ODO:~~~~~" -->
-            <TextView
-                android:id="@+id/ov_odo_mask"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ODO:~~~~~"
-                android:textSize="14sp"
-                android:includeFontPadding="false"
-                android:textColor="#25000000"
-                android:gravity="end"
-                android:shadowColor="@android:color/transparent"
-                android:shadowRadius="0" />
-
-            <!-- camada ativa: "ODO:76261" sobre a máscara -->
-            <TextView
-                android:id="@+id/ov_odo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ODO:76261"
-                android:textSize="14sp"
-                android:includeFontPadding="false"
-                android:textColor="#000000"
-                android:gravity="end"
-                android:shadowColor="@android:color/transparent"
-                android:shadowRadius="0" />
-        </FrameLayout>
-
-        <!-- L3: VELOCÍMETRO (3 dígitos grandes, malha "~~~" + valor) -->
-        <FrameLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="2dp">
-
-            <!-- malha inativa "~~~" -->
+            <!-- malha inativa "~~~" (define a largura das 3 colunas) -->
             <TextView
                 android:id="@+id/ov_mask"
                 android:layout_width="wrap_content"
@@ -97,16 +117,16 @@
                 android:shadowColor="@android:color/transparent"
                 android:shadowRadius="0" />
 
-            <!-- valor ativo (alinhado à direita, sobre a malha) -->
+            <!-- valor ativo PRETO, gravity=end|center_vertical: "0" sobre o 3º "~" -->
             <TextView
                 android:id="@+id/ov_vel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:text="0"
                 android:textSize="40sp"
                 android:includeFontPadding="false"
                 android:textColor="#000000"
-                android:gravity="end"
+                android:gravity="end|center_vertical"
                 android:shadowColor="@android:color/transparent"
                 android:shadowRadius="0" />
         </FrameLayout>
@@ -116,43 +136,59 @@
             android:id="@+id/ov_unit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
             android:layout_marginTop="2dp"
+            android:layout_marginBottom="8dp"
             android:text="KM/H"
             android:textSize="10sp"
             android:includeFontPadding="false"
             android:textColor="#66000000" />
 
-        <!-- L5: ODÔMETRO PARCIAL (texto contínuo "TRIP:" + dígitos) -->
-        <FrameLayout
+        <!-- L5: ODÔMETRO PARCIAL — rótulo colado na máscara de 3 casas -->
+        <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <!-- camada inativa: "TRIP:~~~" -->
             <TextView
-                android:id="@+id/ov_trip_mask"
+                android:id="@+id/ov_trip_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TRIP:~~~"
+                android:text="TRIP:"
                 android:textSize="14sp"
                 android:includeFontPadding="false"
-                android:textColor="#25000000"
-                android:gravity="end"
-                android:shadowColor="@android:color/transparent"
-                android:shadowRadius="0" />
+                android:textColor="#000000" />
 
-            <!-- camada ativa: "TRIP:626" sobre a máscara -->
-            <TextView
-                android:id="@+id/ov_trip"
+            <FrameLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TRIP:626"
-                android:textSize="14sp"
-                android:includeFontPadding="false"
-                android:textColor="#000000"
-                android:gravity="end"
-                android:shadowColor="@android:color/transparent"
-                android:shadowRadius="0" />
-        </FrameLayout>
+                android:layout_height="wrap_content">
+
+                <!-- camada inativa/fixa: "~~~" (3 colunas de malha) -->
+                <TextView
+                    android:id="@+id/ov_trip_mask"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="~~~"
+                    android:textSize="14sp"
+                    android:includeFontPadding="false"
+                    android:textColor="#25000000"
+                    android:gravity="end"
+                    android:shadowColor="@android:color/transparent"
+                    android:shadowRadius="0" />
+
+                <!-- camada ativa: valor preto, alinhado à direita sobre a máscara -->
+                <TextView
+                    android:id="@+id/ov_trip"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:text="0"
+                    android:textSize="14sp"
+                    android:includeFontPadding="false"
+                    android:textColor="#000000"
+                    android:gravity="end|center_vertical"
+                    android:shadowColor="@android:color/transparent"
+                    android:shadowRadius="0" />
+            </FrameLayout>
+        </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -52,8 +52,10 @@ class OverlayService : Service() {
     private var mask: TextView? = null       // malha "~~~" do velocímetro
     private var ovOdo: TextView? = null      // odômetro total (valor)
     private var ovOdoMask: TextView? = null  // máscara do odômetro
+    private var ovOdoLabel: TextView? = null // rótulo "ODO:" em DSEG14
     private var ovTrip: TextView? = null     // odômetro parcial (valor)
     private var ovTripMask: TextView? = null // máscara do odômetro parcial
+    private var ovTripLabel: TextView? = null // rótulo "TRIP:" em DSEG14
     private var ovUnit: TextView? = null     // "KM/H"
     private var ovOilAlert: TextView? = null // alerta de óleo { * }
 
@@ -172,8 +174,10 @@ class OverlayService : Service() {
         mask = raiz?.findViewById(R.id.ov_mask)
         ovOdo = raiz?.findViewById(R.id.ov_odo)
         ovOdoMask = raiz?.findViewById(R.id.ov_odo_mask)
+        ovOdoLabel = raiz?.findViewById(R.id.ov_odo_label)
         ovTrip = raiz?.findViewById(R.id.ov_trip)
         ovTripMask = raiz?.findViewById(R.id.ov_trip_mask)
+        ovTripLabel = raiz?.findViewById(R.id.ov_trip_label)
         ovUnit = raiz?.findViewById(R.id.ov_unit)
         ovOilAlert = raiz?.findViewById(R.id.ov_oil_alert)
 
@@ -268,17 +272,19 @@ class OverlayService : Service() {
             setShadowLayer(0f, 0f, 0f, 0)
         }
 
-        // Odômetro total (texto contínuo "ODO:xxxxx" definido em atualizarDados)
+        // Odômetro total — rótulo "ODO:" e máscara fixa "~~~~~" (5 casas), todos DSEG14
+        ovOdoLabel?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
         ovOdo?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
-        ovOdoMask?.apply { setTypeface(tf); setTextColor(Color.parseColor("#25000000")) }
+        ovOdoMask?.apply { setTypeface(tf); text = "~~~~~"; setTextColor(Color.parseColor("#25000000")) }
 
-        // Odômetro parcial (texto contínuo "TRIP:xxx" definido em atualizarDados)
+        // Odômetro parcial — rótulo "TRIP:" e máscara fixa "~~~" (3 casas), todos DSEG14
+        ovTripLabel?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
         ovTrip?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
-        ovTripMask?.apply { setTypeface(tf); setTextColor(Color.parseColor("#25000000")) }
+        ovTripMask?.apply { setTypeface(tf); text = "~~~"; setTextColor(Color.parseColor("#25000000")) }
 
-        // Unidade + alerta de óleo
-        ovUnit?.apply { setTypeface(tf) }
-        ovOilAlert?.apply { setTypeface(tf) }
+        // Unidade + alerta de óleo (DSEG14 em 100% dos elementos)
+        ovUnit?.apply { setTypeface(tf); setTextColor(Color.parseColor("#66000000")) }
+        ovOilAlert?.apply { setTypeface(tf); setTextColor(Color.parseColor("#CC0000")) }
 
         // Atualiza os valores
         atualizarDados()
@@ -291,22 +297,20 @@ class OverlayService : Service() {
     }
 
     /**
-     * Atualiza ODÔMETRO TOTAL, ODÔMETRO PARCIAL e VELOCIDADE. Os valores são sempre
-     * alinhados à direita (pad à esquerda com espaços) para se sobrepor às máscaras.
+     * Atualiza ODÔMETRO TOTAL, ODÔMETRO PARCIAL e VELOCIDADE. Os valores são
+     * SEMPRE alinhados à direita via gravity="end" na view (o layout dá a cada um
+     * a mesma largura da máscara: ~ avança 816 igual ao dígito na DSEG14). NÃO usar
+     * espaços como padding (espaço avança 200; quebraria o encaixe dos dígitos).
      */
     private fun atualizarDados() {
         val ctx = this
-        // ODÔMETRO TOTAL — texto contínuo "ODO:xxxxx": máscara com ~ na mesma contagem
-        val odo = FlowBridge.totalKm(ctx).toInt().toString()
-        ovOdoMask?.text = "ODO:" + "~".repeat(odo.length)
-        ovOdo?.text = "ODO:$odo"
-        // ODÔMETRO PARCIAL — texto contínuo "TRIP:xxx": máscara com ~ na mesma contagem
-        val trip = FlowBridge.tripAKm(ctx).toInt().toString()
-        ovTripMask?.text = "TRIP:" + "~".repeat(trip.length)
-        ovTrip?.text = "TRIP:$trip"
-        // VELOCIDADE — 3 dígitos, valor alinhado à direita sobre a malha "~~~"
+        // ODÔMETRO TOTAL — valor preto alinhado à direita sobre a máscara fixa "~~~~~"
+        ovOdo?.text = FlowBridge.totalKm(ctx).toInt().toString()
+        // ODÔMETRO PARCIAL — valor preto alinhado à direita sobre a máscara fixa "~~~"
+        ovTrip?.text = FlowBridge.tripAKm(ctx).toInt().toString()
+        // VELOCIDADE — 3 dígitos, valor alinhado à direita (gravity=end) sobre a malha "~~~"
         val kmh = FlowBridge.velocidadeKmh(ctx).toInt().coerceIn(0, 999)
-        ovVel?.text = kmh.toString().padStart(3, ' ')
+        ovVel?.text = kmh.toString()
     }
 
     /**
