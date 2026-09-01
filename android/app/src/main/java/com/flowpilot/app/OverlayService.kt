@@ -268,13 +268,13 @@ class OverlayService : Service() {
             setShadowLayer(0f, 0f, 0f, 0)
         }
 
-        // Odômetro total
+        // Odômetro total (texto contínuo "ODO:xxxxx" definido em atualizarDados)
         ovOdo?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
-        ovOdoMask?.apply { setTypeface(tf); text = "88888"; setTextColor(Color.parseColor("#25000000")) }
+        ovOdoMask?.apply { setTypeface(tf); setTextColor(Color.parseColor("#25000000")) }
 
-        // Odômetro parcial
+        // Odômetro parcial (texto contínuo "TRIP:xxx" definido em atualizarDados)
         ovTrip?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
-        ovTripMask?.apply { setTypeface(tf); text = "88888"; setTextColor(Color.parseColor("#25000000")) }
+        ovTripMask?.apply { setTypeface(tf); setTextColor(Color.parseColor("#25000000")) }
 
         // Unidade + alerta de óleo
         ovUnit?.apply { setTypeface(tf) }
@@ -296,8 +296,15 @@ class OverlayService : Service() {
      */
     private fun atualizarDados() {
         val ctx = this
-        ovOdo?.text = FlowBridge.totalKm(ctx).toInt().toString().padStart(5, ' ')
-        ovTrip?.text = FlowBridge.tripAKm(ctx).toInt().toString().padStart(5, ' ')
+        // ODÔMETRO TOTAL — texto contínuo "ODO:xxxxx": máscara com ~ na mesma contagem
+        val odo = FlowBridge.totalKm(ctx).toInt().toString()
+        ovOdoMask?.text = "ODO:" + "~".repeat(odo.length)
+        ovOdo?.text = "ODO:$odo"
+        // ODÔMETRO PARCIAL — texto contínuo "TRIP:xxx": máscara com ~ na mesma contagem
+        val trip = FlowBridge.tripAKm(ctx).toInt().toString()
+        ovTripMask?.text = "TRIP:" + "~".repeat(trip.length)
+        ovTrip?.text = "TRIP:$trip"
+        // VELOCIDADE — 3 dígitos, valor alinhado à direita sobre a malha "~~~"
         val kmh = FlowBridge.velocidadeKmh(ctx).toInt().coerceIn(0, 999)
         ovVel?.text = kmh.toString().padStart(3, ' ')
     }

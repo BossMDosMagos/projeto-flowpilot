@@ -3,17 +3,21 @@
   Painel HUD do FlowPilot (R.layout.overlay_flowpilot).
 
   Container circular com fundo branco/cinza e borda VERMELHA (ov_hud).
-  Todo o texto digital usa a fonte DSEG14 (aplicada no OverlayService).
+  ABSOLUTAMENTE TODO o texto usa a fonte DSEG14Modern-Bold (aplicada no
+  OverlayService via Typeface.createFromAsset) — incluindo o rótulo "ODO:",
+  "TRIP:", o símbolo "{ * }" e a unidade "KM/H".
 
-  ZONAS (de cima para baixo, centralizadas num LinearLayout vertical):
-    a) ALERTA DE ÓLEO  ov_oil_alert   -> símbolo { * } em destaque (pisca).
-    b) ODÔMETRO TOTAL  ov_odo         -> "ODO:" + valor com máscara inativa ao fundo.
-    c) VELOCÍMETRO     ov_mask+ov_vel -> 3 dígitos gigantes (malha "~~~" + valor).
-    d) UNIDADE         ov_unit        -> "KM/H".
-    e) ODÔMETRO PARCIAL ov_trip       -> "TRIP:" + valor da viagem com máscara.
+  LINHAS (centralizadas verticalmente, uma por zona):
+    L1  ov_oil_alert      -> "{ * }" centralizado.
+    L2  ov_odo(mask+val)  -> texto CONTÍNUO "ODO:~~~~~" (inativo) + "ODO:76261" (ativo).
+    L3  ov_mask+ov_vel    -> 3 dígitos grandes centralizados (malha "~~~" + valor).
+    L4  ov_unit           -> "KM/H" logo abaixo dos dígitos.
+    L5  ov_trip(mask+val) -> texto CONTÍNUO "TRIP:~~~" (inativo) + "TRIP:626" (ativo).
 
-  Camadas de dígito (ODO/TRIP/VEL) usam a MESMA fonte, MESMO tamanho e MESMA
-  largura, sobrepostas em FrameLayout, gravity=end, includeFontPadding=false.
+  As camadas de cada linha são idênticas (MESMA fonte, MESMO tamanho, MESMO texto
+  de comprimento) e sobrepostas em FrameLayout — o rótulo fica COLAADO nos dígitos.
+  Entre as linhas: marginBottom = 4dp para preencher a bola sem grudar nas bordas
+  nem esmagar o centro.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ov_raiz"
@@ -26,90 +30,47 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:orientation="vertical"
-        android:gravity="center_horizontal">
+        android:gravity="center_horizontal"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
 
-        <!-- a) ALERTA DE ÓLEO: { * } -->
+        <!-- L1: ALERTA DE ÓLEO -->
         <TextView
             android:id="@+id/ov_oil_alert"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
             android:text="{ * }"
-            android:textSize="20sp"
-            android:textColor="#CC0000"
-            android:textStyle="bold"
-            android:includeFontPadding="false" />
+            android:textSize="16sp"
+            android:includeFontPadding="false"
+            android:textColor="#CC0000" />
 
-        <!-- b) ODÔMETRO TOTAL: ODO: + valor (máscara ao fundo) -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/ov_odo_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ODO:"
-                android:textSize="13sp"
-                android:textColor="#66000000"
-                android:textStyle="bold"
-                android:includeFontPadding="false" />
-
-            <FrameLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content">
-
-                <TextView
-                    android:id="@+id/ov_odo_mask"
-                    android:layout_width="90dp"
-                    android:layout_height="wrap_content"
-                    android:text="88888"
-                    android:textSize="13sp"
-                    android:includeFontPadding="false"
-                    android:textColor="#25000000"
-                    android:gravity="end"
-                    android:shadowColor="@android:color/transparent"
-                    android:shadowRadius="0" />
-
-                <TextView
-                    android:id="@+id/ov_odo"
-                    android:layout_width="90dp"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textSize="13sp"
-                    android:includeFontPadding="false"
-                    android:textColor="#000000"
-                    android:gravity="end"
-                    android:shadowColor="@android:color/transparent"
-                    android:shadowRadius="0" />
-            </FrameLayout>
-        </LinearLayout>
-
-        <!-- c) VELOCÍMETRO PRINCIPAL: 3 dígitos gigantes (malha "~~~" + valor) -->
+        <!-- L2: ODÔMETRO TOTAL (texto contínuo "ODO:" + dígitos) -->
         <FrameLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp">
+            android:layout_marginBottom="4dp">
 
+            <!-- camada inativa: "ODO:~~~~~" -->
             <TextView
-                android:id="@+id/ov_mask"
-                android:layout_width="120dp"
+                android:id="@+id/ov_odo_mask"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="~~~"
-                android:textSize="36sp"
+                android:text="ODO:~~~~~"
+                android:textSize="14sp"
                 android:includeFontPadding="false"
                 android:textColor="#25000000"
                 android:gravity="end"
                 android:shadowColor="@android:color/transparent"
                 android:shadowRadius="0" />
 
+            <!-- camada ativa: "ODO:76261" sobre a máscara -->
             <TextView
-                android:id="@+id/ov_vel"
-                android:layout_width="120dp"
+                android:id="@+id/ov_odo"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0"
-                android:textSize="36sp"
+                android:text="ODO:76261"
+                android:textSize="14sp"
                 android:includeFontPadding="false"
                 android:textColor="#000000"
                 android:gravity="end"
@@ -117,63 +78,81 @@
                 android:shadowRadius="0" />
         </FrameLayout>
 
-        <!-- d) UNIDADE: KM/H -->
+        <!-- L3: VELOCÍMETRO (3 dígitos grandes, malha "~~~" + valor) -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="2dp">
+
+            <!-- malha inativa "~~~" -->
+            <TextView
+                android:id="@+id/ov_mask"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="~~~"
+                android:textSize="40sp"
+                android:includeFontPadding="false"
+                android:textColor="#25000000"
+                android:gravity="end"
+                android:shadowColor="@android:color/transparent"
+                android:shadowRadius="0" />
+
+            <!-- valor ativo (alinhado à direita, sobre a malha) -->
+            <TextView
+                android:id="@+id/ov_vel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="40sp"
+                android:includeFontPadding="false"
+                android:textColor="#000000"
+                android:gravity="end"
+                android:shadowColor="@android:color/transparent"
+                android:shadowRadius="0" />
+        </FrameLayout>
+
+        <!-- L4: UNIDADE -->
         <TextView
             android:id="@+id/ov_unit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:layout_marginTop="2dp"
             android:text="KM/H"
-            android:textSize="11sp"
-            android:textColor="#66000000"
-            android:textStyle="bold"
-            android:letterSpacing="0.15"
-            android:includeFontPadding="false" />
+            android:textSize="10sp"
+            android:includeFontPadding="false"
+            android:textColor="#66000000" />
 
-        <!-- e) ODÔMETRO PARCIAL: TRIP: + valor (máscara ao fundo) -->
-        <LinearLayout
+        <!-- L5: ODÔMETRO PARCIAL (texto contínuo "TRIP:" + dígitos) -->
+        <FrameLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_height="wrap_content">
 
+            <!-- camada inativa: "TRIP:~~~" -->
             <TextView
-                android:id="@+id/ov_trip_label"
+                android:id="@+id/ov_trip_mask"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TRIP:"
-                android:textSize="13sp"
-                android:textColor="#66000000"
-                android:textStyle="bold"
-                android:includeFontPadding="false" />
+                android:text="TRIP:~~~"
+                android:textSize="14sp"
+                android:includeFontPadding="false"
+                android:textColor="#25000000"
+                android:gravity="end"
+                android:shadowColor="@android:color/transparent"
+                android:shadowRadius="0" />
 
-            <FrameLayout
+            <!-- camada ativa: "TRIP:626" sobre a máscara -->
+            <TextView
+                android:id="@+id/ov_trip"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content">
-
-                <TextView
-                    android:id="@+id/ov_trip_mask"
-                    android:layout_width="90dp"
-                    android:layout_height="wrap_content"
-                    android:text="88888"
-                    android:textSize="13sp"
-                    android:includeFontPadding="false"
-                    android:textColor="#25000000"
-                    android:gravity="end"
-                    android:shadowColor="@android:color/transparent"
-                    android:shadowRadius="0" />
-
-                <TextView
-                    android:id="@+id/ov_trip"
-                    android:layout_width="90dp"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textSize="13sp"
-                    android:includeFontPadding="false"
-                    android:textColor="#000000"
-                    android:gravity="end"
-                    android:shadowColor="@android:color/transparent"
-                    android:shadowRadius="0" />
-            </FrameLayout>
-        </LinearLayout>
+                android:layout_height="wrap_content"
+                android:text="TRIP:626"
+                android:textSize="14sp"
+                android:includeFontPadding="false"
+                android:textColor="#000000"
+                android:gravity="end"
+                android:shadowColor="@android:color/transparent"
+                android:shadowRadius="0" />
+        </FrameLayout>
     </LinearLayout>
 </FrameLayout>
