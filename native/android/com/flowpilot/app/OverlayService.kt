@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -22,15 +24,21 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
 /**
- * 4. Bolha de velocidade flutuante do FlowPilot.
+ * 4. Painel HUD flutuante do FlowPilot.
  *
- * - Roda como FOREGROUND SERVICE: exibe uma notificação discreta e o SO não mata a
- *   bolha de velocidade enquanto o motorista está em outro app (99/Uber/Maps).
+ * - Roda como FOREGROUND SERVICE: exibe uma notificação discreta e o SO não mata o
+ *   painel enquanto o motorista está em outro app (99/Uber/Maps).
  * - Usa TYPE_APPLICATION_OVERLAY no WindowManager para desenhar fora da WebView.
- * - UI mínima: só a bolha circular com o número de velocidade (fonte DS-DIGIB) + "km/h".
+ * - UI: HUD circular (fundo branco/cinza + borda VERMELHA) com as zonas:
+ *     a) ALERTA DE ÓLEO  { * }        -> pisca quando a troca está pendente.
+ *     b) ODÔMETRO TOTAL  ODO:xxxxx    -> máscara inativa ao fundo + valor.
+ *     c) VELOCÍMETRO     3 dígitos    -> malha "~~~" + valor ativo em cima.
+ *     d) UNIDADE         KM/H.
+ *     e) ODÔMETRO PARCIAL TRIP:xxxxx  -> valor da viagem com máscara.
+ * - Todo texto digital usa a fonte DSEG14Modern-Bold (assets/fonts).
  * - 100% ARRASTÁVEL: um OnTouchListener na raiz segue o dedo via updateViewLayout.
- * - Personalizável pelo usuário nas Configurações (cor da fonte, cor do fundo e tamanho),
- *   persistidas via FlowBridge.overlayCor/overlayFundo/overlayTamanho — aplicadas ao vivo.
+ * - ÁUDIO: beep alto (ToneGenerator, TONE_CDMA_HIGH_L) a cada 5s quando a troca de
+ *   óleo está pendente E o veículo está parado (vel=0). Em movimento, silencia.
  * - Se a permissão "Exibir sobre outros apps" faltar, NÃO morre nem dá crash: apenas
  *   não infla a view e aguarda um novo start (a MainActivity re-inicia ao conceder).
  */
@@ -38,17 +46,35 @@ class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var ovVel: TextView? = null      // camada de frente (velocidade real, sobre a malha "~~~")
-    private var mask: TextView? = null       // camada de fundo ("~~~", malha completa do display)
-    private var sufixo: TextView? = null     // "km/h" abaixo
+
+    // Zonas do HUD
+    private var ovVel: TextView? = null      // velocidade (camada ativa, sobre a malha)
+    private var mask: TextView? = null       // malha "~~~" do velocímetro
+    private var ovOdo: TextView? = null      // odômetro total (valor)
+    private var ovOdoMask: TextView? = null  // máscara do odômetro
+    private var ovTrip: TextView? = null     // odômetro parcial (valor)
+    private var ovTripMask: TextView? = null // máscara do odômetro parcial
+    private var ovUnit: TextView? = null     // "KM/H"
+    private var ovOilAlert: TextView? = null // alerta de óleo { * }
+
     private var params: WindowManager.LayoutParams? = null
+
     @Volatile
     private var rodando = false
-    private var corAcesa = Color.parseColor("#00FF88")
+
+    /** Alterna o pisca-pisca do alerta de óleo. */
+    private var alertaVisivel = false
+
+    /** Momento (ms) do último beep de alerta de óleo. */
+    private var ultimoBeepMs = 0L
+
+    private var tone: ToneGenerator? = null
 
     companion object {
         private const val CHANNEL_ID = "flowpilot_overlay"
         private const val NOTIF_ID = 11
+        private const val TICK_MS = 500L          // tick visual (pisca)
+        private const val BEEP_MS = 5000L         // beep a cada 5 s
 
         /** Instância corrente do serviço (para a MainActivity aplicar prefs ao vivo). */
         @Volatile
@@ -59,13 +85,18 @@ class OverlayService : Service() {
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
     }
 
+    /** Troca de óleo pendente quando o intervalo está configurado e já foi percorrido. */
+    private fun trocaOleoPendente(): Boolean {
+        val iv = FlowBridge.intervalo(this)
+        if (iv <= 0f) return false
+        return FlowBridge.oleoFaltaKm(this) <= 0f
+    }
+
     override fun onCreate() {
         super.onCreate()
         instancia = this
         criarCanal()
-        // Foreground imediato (obrigatório em O+ ao usar startForegroundService)
         iniciarForeground()
-        // NÃO morre se faltar a permissão: apenas não desenha a view por enquanto.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             return
         }
@@ -73,8 +104,6 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Reinfla com segurança caso a permissão tenha sido concedida depois que o
-        // serviço começou (onCreate retornou sem view) ou após revogar/conceder.
         if (raiz == null && Settings.canDrawOverlays(this)) inflarOverlay()
         return START_STICKY
     }
@@ -85,7 +114,7 @@ class OverlayService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "FlowPilot — bolha de velocidade",
+                    "FlowPilot — painel HUD",
                     NotificationManager.IMPORTANCE_MIN
                 ).apply { setShowBadge(false) }
             )
@@ -101,7 +130,7 @@ class OverlayService : Service() {
         val notificacao: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("FlowPilot")
-            .setContentText("Bolha de velocidade ativa — " + FlowBridge.stageTitle(this))
+            .setContentText("Painel HUD ativo — " + FlowBridge.stageTitle(this))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -115,22 +144,19 @@ class OverlayService : Service() {
     }
 
     private fun inflarOverlay() {
-        // protege contra duplo addView (ex.: onStartCommand repetido)
         if (raiz != null) return
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
         raiz = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater)
             .inflate(R.layout.overlay_flowpilot, null)
 
-        // O diâmetro é definido DIRETAMENTE no WindowManager.LayoutParams (não no
-        // layoutParams da view). Assim a janela tem o tamanho do círculo e o
-        // conteúdo não "colapsa" a bolha numa gota minúscula.
+        // O tamanho do HUD é definido DIRETAMENTE no WindowManager.LayoutParams.
         val escala = FlowBridge.overlayTamanho(this).let { if (it <= 0f) 1f else it }
-        val diametroPx = (92f * escala * resources.displayMetrics.density).toInt()
+        val ladoPx = (180f * escala * resources.displayMetrics.density).toInt()
 
         params = WindowManager.LayoutParams(
-            diametroPx,
-            diametroPx,
+            ladoPx,
+            ladoPx,
             OVERLAY_TYPE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -144,9 +170,27 @@ class OverlayService : Service() {
 
         ovVel = raiz?.findViewById(R.id.ov_vel)
         mask = raiz?.findViewById(R.id.ov_mask)
-        sufixo = raiz?.findViewById(R.id.ov_sufixo)
+        ovOdo = raiz?.findViewById(R.id.ov_odo)
+        ovOdoMask = raiz?.findViewById(R.id.ov_odo_mask)
+        ovTrip = raiz?.findViewById(R.id.ov_trip)
+        ovTripMask = raiz?.findViewById(R.id.ov_trip_mask)
+        ovUnit = raiz?.findViewById(R.id.ov_unit)
+        ovOilAlert = raiz?.findViewById(R.id.ov_oil_alert)
 
-        // ===== ARRASTAR E SOLTAR =====
+        setupDrag()
+
+        aplicarPreferencias()
+
+        runCatching { wm?.addView(raiz, params) }
+        if (raiz?.parent == null) {
+            raiz = null
+        } else {
+            iniciarLoop()
+        }
+    }
+
+    /** Drag-and-drop: o painel segue o dedo na tela via updateViewLayout. */
+    private fun setupDrag() {
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -158,30 +202,22 @@ class OverlayService : Service() {
         raiz?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = pArrasto!!.x
-                    initialY = pArrasto!!.y
+                    initialX = pArrasto?.x ?: 0
+                    initialY = pArrasto?.y ?: 0
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    pArrasto!!.x = initialX + (event.rawX - initialTouchX).toInt()
-                    pArrasto!!.y = initialY + (event.rawY - initialTouchY).toInt()
-                    wmArrasto?.updateViewLayout(rArrasto, pArrasto)
+                    if (pArrasto != null) {
+                        pArrasto.x = initialX + (event.rawX - initialTouchX).toInt()
+                        pArrasto.y = initialY + (event.rawY - initialTouchY).toInt()
+                        wmArrasto?.updateViewLayout(rArrasto, pArrasto)
+                    }
                     true
                 }
                 else -> false
             }
-        }
-
-        aplicarPreferencias()
-
-        runCatching { wm?.addView(raiz, params) }
-        if (raiz?.parent == null) {
-            // falhou (ex.: permissão revogada entre a checagem e o addView)
-            raiz = null
-        } else {
-            atualizarCadaSegundo()
         }
     }
 
@@ -191,21 +227,15 @@ class OverlayService : Service() {
     }
 
     /**
-     * Aplica as preferências do painel lidas do FlowBridge (cor da fonte, cor do fundo,
-     * tamanho e fonte DS-DIGIB). Chamada no inflate e sempre que o usuário muda
-     * nas Configurações (via MainActivity.setOverlayPrefs -> instancia.aplicarPreferencias).
-     *
-     * O TAMANHO é aplicado no `params` do WindowManager (que define o diâmetro real) e,
-     * se a bolha já está na tela, chamamos updateViewLayout para redimensionar ao vivo.
+     * Aplica a fonte DSEG14 em TODAS as zonas do HUD, os tamanhos e as cores fixas
+     * do design. O tamanho do círculo vai no `params` do WindowManager.
      */
     private fun aplicarPreferencias() {
         val ra = raiz ?: return
         val contexto = this
         val p = params ?: return
 
-        // Fonte 7-segmentos oficial do FlowPilot (DSEG14 Modern Bold, vertical),
-        // carregada do assets e aplicada IGUAL às duas camadas (máscara + valor)
-        // para encaixe perfeito dos dígitos. Fallback para monospace se algo falhar.
+        // Fonte digital DSEG14 (7-segmentos oficial) — aplicada a todas as zonas.
         var tf: Typeface? = null
         try {
             tf = Typeface.createFromAsset(contexto.assets, "fonts/DSEG14Modern-Bold.ttf")
@@ -214,62 +244,45 @@ class OverlayService : Service() {
         }
         if (tf == null) tf = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
 
-        // cores (com fallback robusto de parse)
-        val cor = try { Color.parseColor(FlowBridge.overlayCor(contexto)) }
-            catch (t: Throwable) { Color.parseColor("#00FF88") }
-        val fundo = try { Color.parseColor(FlowBridge.overlayFundo(contexto)) }
-            catch (t: Throwable) { Color.parseColor("#000000") }
-
-        // ===== TAMANHO do círculo (no params do WindowManager, em px) =====
+        // ===== TAMANHO do círculo (no params do WindowManager) =====
         val escala = FlowBridge.overlayTamanho(contexto).let { if (it <= 0f) 1f else it }
-        val diametroPx = (92f * escala * resources.displayMetrics.density).toInt()
-        p.width = diametroPx
-        p.height = diametroPx
+        val ladoPx = (180f * escala * resources.displayMetrics.density).toInt()
+        p.width = ladoPx
+        p.height = ladoPx
 
-        // ===== FUNDO da bolha =====
-        // Substitui a cor de preenchimento do shape (keep a borda discreta).
-        val bg = ra.background
-        if (bg is android.graphics.drawable.GradientDrawable) {
-            try {
-                val g = bg.mutate() as android.graphics.drawable.GradientDrawable
-                g.setColor(fundo)
-            } catch (t: Throwable) {
-                ra.background?.mutate()?.setTint(fundo)
-            }
-        } else {
-            ra.background?.mutate()?.setTint(fundo)
-        }
+        // ===== FONTES e CORES de cada zona =====
+        val tamanhoVel = if (FlowBridge.overlayFonte(contexto) <= 0f) 36f else FlowBridge.overlayFonte(contexto)
 
-        // ===== NÚMERO (2 camadas: malha "~~~" + valor em cima, alinhado à direita) =====
-        corAcesa = cor
-
-        val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 36f else FlowBridge.overlayFonte(contexto)
-
-        // Frente (valor real): MESMA fonte DSEG14 da máscara, cor PRETA (LCD clássico),
-        // alinhada à direita. Sem glow para não borrar o encaixe dos segmentos.
+        // Velocímetro: camada ativa + malha "~~~" (mesma fonte/tamanho)
         ovVel?.apply {
             setTypeface(tf)
-            textSize = tamanhoFonte
+            textSize = tamanhoVel
             setTextColor(Color.parseColor("#000000"))
             setShadowLayer(0f, 0f, 0f, 0)
         }
-
-        // Fundo (malha "~~~"): MESMA fonte e MESMO tamanho (encaixe exato), cor
-        // preta translúcida #25000000, SEM sombra — malha completa do display.
         mask?.apply {
             setTypeface(tf)
-            textSize = tamanhoFonte
+            textSize = tamanhoVel
             text = "~~~"
             setTextColor(Color.parseColor("#25000000"))
-            setShadowLayer(0f, 0f, 0f, 0)   // sem brilho/borrão na malha
+            setShadowLayer(0f, 0f, 0f, 0)
         }
 
-        sufixo?.apply {
-            textSize = 10f * escala
-        }
+        // Odômetro total
+        ovOdo?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
+        ovOdoMask?.apply { setTypeface(tf); text = "88888"; setTextColor(Color.parseColor("#25000000")) }
 
-        // Atualiza o valor conforme a cor atual
-        atualizarValor()
+        // Odômetro parcial
+        ovTrip?.apply { setTypeface(tf); setTextColor(Color.parseColor("#000000")) }
+        ovTripMask?.apply { setTypeface(tf); text = "88888"; setTextColor(Color.parseColor("#25000000")) }
+
+        // Unidade + alerta de óleo
+        ovUnit?.apply { setTypeface(tf) }
+        ovOilAlert?.apply { setTypeface(tf) }
+
+        // Atualiza os valores
+        atualizarDados()
+        atualizarAlertaOleo()
 
         // Redimensiona a janela ao vivo se já estiver na tela
         if (ra.parent != null) {
@@ -278,27 +291,70 @@ class OverlayService : Service() {
     }
 
     /**
-     * Atualiza a camada de frente (ov_vel) com a velocidade REAL, sempre FORMATADA
-     * ALINHADA À DIREITA para se sobrepor à malha "~~~" de fundo: um valor de uma
-     * casa (ex.: 0 km/h) aparece sobre a última coluna; duas casas sobre as duas
-     * últimas, e assim por diante. Pra isso o texto é pad (preenchido à esquerda
-     * com espaços) e a view usa gravity=end.
+     * Atualiza ODÔMETRO TOTAL, ODÔMETRO PARCIAL e VELOCIDADE. Os valores são sempre
+     * alinhados à direita (pad à esquerda com espaços) para se sobrepor às máscaras.
      */
-    private fun atualizarValor() {
-        val kmh = FlowBridge.velocidadeKmh(this).toInt().coerceIn(0, 999)
+    private fun atualizarDados() {
+        val ctx = this
+        ovOdo?.text = FlowBridge.totalKm(ctx).toInt().toString().padStart(5, ' ')
+        ovTrip?.text = FlowBridge.tripAKm(ctx).toInt().toString().padStart(5, ' ')
+        val kmh = FlowBridge.velocidadeKmh(ctx).toInt().coerceIn(0, 999)
         ovVel?.text = kmh.toString().padStart(3, ' ')
     }
 
-    /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
-    private fun atualizarCadaSegundo() {
+    /**
+     * Atualiza o alerta de óleo: pisca quando a troca está pendente e gerencia o beep.
+     *   - pendente E parado (vel=0): beep a cada 5 s + pisca.
+     *   - pendente E em movimento (vel>0): mantém só o pisca, SEM beep.
+     *   - não pendente: esconde o alerta.
+     */
+    private fun atualizarAlertaOleo() {
+        val pendente = trocaOleoPendente()
+        val vel = FlowBridge.velocidadeKmh(this)
+        val agora = System.currentTimeMillis()
+
+        if (!pendente) {
+            ovOilAlert?.visibility = View.INVISIBLE
+            ultimoBeepMs = agora
+            return
+        }
+
+        // pisca-pisca (alterna a cada tick de 500 ms)
+        alertaVisivel = !alertaVisivel
+        ovOilAlert?.visibility = if (alertaVisivel) View.VISIBLE else View.INVISIBLE
+
+        if (vel > 0f) {
+            // em movimento: silencia o beep e reinicia a janela de 5 s
+            ultimoBeepMs = agora
+            return
+        }
+
+        // parado: beep a cada 5 s
+        if (agora - ultimoBeepMs >= BEEP_MS) {
+            ultimoBeepMs = agora
+            emitirBeep()
+        }
+    }
+
+    /** Emite o beep alto de alerta (TONE_CDMA_HIGH_L) via ToneGenerator. */
+    private fun emitirBeep() {
+        try {
+            if (tone == null) tone = ToneGenerator(AudioManager.STREAM_ALARM, 100)
+            tone?.startTone(ToneGenerator.TONE_CDMA_HIGH_L, 300)
+        } catch (t: Throwable) {
+            // sem áudio disponível: segue a vida
+        }
+    }
+
+    private fun iniciarLoop() {
         rodando = true
         Thread {
             while (rodando) {
                 try {
-                    Thread.sleep(1000)
+                    Thread.sleep(TICK_MS)
                     runOnUiThread {
-                        // velocidade REAL (vinda do ForegroundLocationService via FlowBridge)
-                        atualizarValor()
+                        atualizarDados()
+                        atualizarAlertaOleo()
                     }
                 } catch (t: InterruptedException) {
                     break
@@ -316,6 +372,8 @@ class OverlayService : Service() {
     override fun onDestroy() {
         rodando = false
         instancia = null
+        runCatching { tone?.release() }
+        tone = null
         raiz?.let { runCatching { wm?.removeView(it) } }
         raiz = null
         super.onDestroy()
