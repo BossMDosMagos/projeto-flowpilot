@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Painel HUD do FlowPilot: círculo com fundo branco/cinza-claro e borda vermelha.
-  Substitui a bolha antiga (ov_bolha) a partir do redesenho em HUD.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
