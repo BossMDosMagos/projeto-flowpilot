@@ -20,7 +20,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
-import androidx.core.content.res.ResourcesCompat
 
 /**
  * 4. Bolha de velocidade flutuante do FlowPilot.
@@ -204,10 +203,12 @@ class OverlayService : Service() {
         val contexto = this
         val p = params ?: return
 
-        // Fonte digital DS-DIGIB (fallback p/ monospace se algo falhar)
+        // Fonte 7-segmentos oficial do FlowPilot (DSEG14 Modern Bold, vertical),
+        // carregada do assets e aplicada IGUAL às duas camadas (máscara + valor)
+        // para encaixe perfeito dos dígitos. Fallback para monospace se algo falhar.
         var tf: Typeface? = null
         try {
-            tf = ResourcesCompat.getFont(contexto, R.font.ds_digib)
+            tf = Typeface.createFromAsset(contexto.assets, "fonts/DSEG14Modern-Bold.ttf")
         } catch (t: Throwable) {
             tf = null
         }
@@ -242,22 +243,23 @@ class OverlayService : Service() {
         // ===== NÚMERO (2 camadas: máscara "888" + valor em cima, alinhado à direita) =====
         corAcesa = cor
 
-        val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 34f else FlowBridge.overlayFonte(contexto)
+        val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 36f else FlowBridge.overlayFonte(contexto)
 
-        // Frente (valor real): fonte 7-segment, cor verde LED, glow sutil (não borra
-        // porque só existe na camada ativa — a máscara "888" não tem sombra).
-        val glow = Color.argb(100, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa))
+        // Frente (valor real): fonte 7-segment idêntica à máscara, cor PRETA (LCD clássico),
+        // alinhada à direita. Sem glow para não borrar o encaixe dos segmentos.
         ovVel?.apply {
             setTypeface(tf)
             textSize = tamanhoFonte
-            setTextColor(corAcesa)
-            setShadowLayer(4f, 0f, 0f, glow)
+            setTextColor(Color.parseColor("#000000"))
+            setShadowLayer(0f, 0f, 0f, 0)
         }
 
-        // Fundo (máscara "888"): mesma fonte/tamanho (para alinhar exato) mas SEM sombra.
+        // Fundo (máscara "888"): MESMA fonte e MESMO tamanho (encaixe exato), cor
+        // translúcida #20000000, SEM sombra — segmentos apagados do cristal.
         mask?.apply {
             setTypeface(tf)
             textSize = tamanhoFonte
+            setTextColor(Color.parseColor("#20000000"))
             setShadowLayer(0f, 0f, 0f, 0)   // sem brilho/borrão nos segmentos apagados
         }
 
