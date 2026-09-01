@@ -39,7 +39,7 @@ class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var valor: TextView? = null      // camada de frente (velocidade real, verde LED)
+    private var ovVel: TextView? = null      // camada de frente (velocidade real, sobre o "888")
     private var mask: TextView? = null       // camada de fundo ("888", segmentos apagados)
     private var sufixo: TextView? = null     // "km/h" abaixo
     private var params: WindowManager.LayoutParams? = null
@@ -143,12 +143,37 @@ class OverlayService : Service() {
             y = 200
         }
 
-        valor = raiz?.findViewById(R.id.ov_valor)
+        ovVel = raiz?.findViewById(R.id.ov_vel)
         mask = raiz?.findViewById(R.id.ov_mask)
         sufixo = raiz?.findViewById(R.id.ov_sufixo)
 
         // ===== ARRASTAR E SOLTAR =====
-        raiz?.setOnTouchListener(ArrastarListener())
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        val rArrasto = raiz
+        val pArrasto = params
+        val wmArrasto = wm
+
+        raiz?.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = pArrasto!!.x
+                    initialY = pArrasto!!.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    pArrasto!!.x = initialX + (event.rawX - initialTouchX).toInt()
+                    pArrasto!!.y = initialY + (event.rawY - initialTouchY).toInt()
+                    wmArrasto?.updateViewLayout(rArrasto, pArrasto)
+                    true
+                }
+                else -> false
+            }
+        }
 
         aplicarPreferencias()
 
@@ -222,7 +247,7 @@ class OverlayService : Service() {
         // Frente (valor real): fonte 7-segment, cor verde LED, glow sutil (não borra
         // porque só existe na camada ativa — a máscara "888" não tem sombra).
         val glow = Color.argb(100, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa))
-        valor?.apply {
+        ovVel?.apply {
             setTypeface(tf)
             textSize = tamanhoFonte
             setTextColor(corAcesa)
@@ -250,54 +275,18 @@ class OverlayService : Service() {
     }
 
     /**
-     * Atualiza a camada de frente com a velocidade real. A máscara "888" já fica fixa
-     * atrás (segmentos apagados). O valor é exibido por cima; os dígitos não
-     * preenchidos à esquerda deixam ver a máscara — efeito LCD real e estável.
+     * Atualiza a camada de frente (ov_vel) com a velocidade REAL, sempre FORMATADA
+     * ALINHADA À DIREITA para coincidir com as casas da máscara "888": um valor de
+     * uma casa (ex.: 0 km/h) aparece sobre o último "8"; duas casas sobre os dois
+     * últimos, e assim por diante. Pra isso o texto é pad (preenchido à esquerda
+     * com espaços) e a view usa gravity=end.
      */
     private fun atualizarValor() {
         val kmh = FlowBridge.velocidadeKmh(this).toInt().coerceIn(0, 999)
-        valor?.text = kmh.toString()
+        ovVel?.text = kmh.toString().padStart(3, ' ')
     }
 
     /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
-    private inner class ArrastarListener : View.OnTouchListener {
-        private var dxInicial = 0f
-        private var dyInicial = 0f
-        private var xInicial = 0
-        private var yInicial = 0
-        private var arrastando = false
-
-        override fun onTouch(v: View, e: MotionEvent): Boolean {
-            val p = params ?: return false
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    // guarda o ponto de toque e a posição atual da janela
-                    xInicial = p.x
-                    yInicial = p.y
-                    dxInicial = e.rawX
-                    dyInicial = e.rawY
-                    arrastando = true
-                    return true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    if (!arrastando) return false
-                    // nova posição = inicial + deslocamento do dedo (em px)
-                    p.x = xInicial + (e.rawX - dxInicial).toInt()
-                    p.y = yInicial + (e.rawY - dyInicial).toInt()
-                    runCatching { wm?.updateViewLayout(v, p) }
-                    return true
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    arrastando = false
-                    return true
-                }
-            }
-            return false
-        }
-    }
-
     private fun atualizarCadaSegundo() {
         rodando = true
         Thread {

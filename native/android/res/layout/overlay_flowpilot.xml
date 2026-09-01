@@ -1,70 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Bolha de velocidade do FlowPilot (R.layout.overlay_flowpilot).
-  Bolha circular discreta e 100% arrastável.
 
-  MOSTRADOR LCD REAL (2 camadas sobrepostas em FrameLayout):
-    a) CAMADA DE FUNDO (ov_mask): exibe "888" (máscara máxima) na mesma fonte
-       7-segmentos, cor cinza-claro translúcida (#33888888), SEM sombra/borrão —
-       são os segmentos "apagados" do cristal LCD.
-    b) CAMADA DE FRENTE (ov_valor): exibe a velocidade em tempo real, na cor
-       verde LED, alinhada À DIREITA sobre a máscara (define a largura fixa das
-       "888", então as matrizes nunca se movem).
-  "km/h" fica centralizado abaixo, em fonte sans-serif limpa.
-  O diâmetro do círculo é definido no WindowManager.LayoutParams pelo
-  OverlayService (aplicarPreferencias); aqui a raiz apenas preenche (match_parent).
+  ESTRUTURA (FrameLayout fixo 100dp com fundo circular):
+    - Camada FUNDO (ov_mask): "888" (máscara máxima de 7 segmentos), cor
+      cinza bem translúcida (#1f000000), SEM sombra/brilho — segmentos apagados.
+    - Camada FRENTE (ov_vel): valor real da velocidade, sobreposta exatamente
+      em cima da máscara, alinhada À DIREITA para coincidir com as casas do "888"
+      (ex.: 0 km/h => "0" sobre o último "8").
+    - Sufixo "km/h": na parte inferior, centralizado.
+
+  Ambas as camadas usam a MESMA fonte, MESMO tamanho e MESMA largura para o
+  alinhamento exato dos dígitos.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ov_raiz"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
+    android:layout_width="100dp"
+    android:layout_height="100dp"
     android:background="@drawable/ov_bolha">
 
-    <!-- Camadas sobrepostas dos dígitos -->
-    <FrameLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content">
+    <!-- CAMADA DE FUNDO / INATIVO: "888" fixo, bem translúcido, sem brilho -->
+    <TextView
+        android:id="@+id/ov_mask"
+        android:layout_width="100dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="888"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:includeFontPadding="false"
+        android:typeface="monospace"
+        android:textColor="#1f000000"
+        android:gravity="center"
+        android:shadowColor="@android:color/transparent"
+        android:shadowRadius="0" />
 
-        <!-- CAMADA DE FUNDO: máscara "888" (segmentos apagados, sem brilho) -->
-        <TextView
-            android:id="@+id/ov_mask"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="888"
-            android:textSize="34sp"
-            android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:typeface="monospace"
-            android:textColor="#33888888"
-            android:letterSpacing="0.02"
-            android:gravity="center"
-            android:shadowColor="@android:color/transparent" />
+    <!-- CAMADA DE FRENTE / ATIVO: valor real, sobreposto, alinhado à direita -->
+    <TextView
+        android:id="@+id/ov_vel"
+        android:layout_width="100dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="0"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:includeFontPadding="false"
+        android:typeface="monospace"
+        android:textColor="#000000"
+        android:gravity="end|center_vertical"
+        android:shadowColor="#66007700"
+        android:shadowRadius="4"
+        android:shadowDx="0"
+        android:shadowDy="0" />
 
-        <!-- CAMADA DE FRENTE: valor real, alinhado À DIREITA sobre a máscara -->
-        <TextView
-            android:id="@+id/ov_valor"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:text="0"
-            android:textSize="34sp"
-            android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:typeface="monospace"
-            android:textColor="#00FF88"
-            android:gravity="end|center_vertical"
-            android:shadowColor="#66007700"
-            android:shadowRadius="4"
-            android:shadowDx="0"
-            android:shadowDy="0" />
-    </FrameLayout>
-
-    <!-- Unidade de medida: sans-serif limpa e pequena, centralizada -->
+    <!-- SUFIXO: unidade de medida, centralizada na parte inferior -->
     <TextView
         android:id="@+id/ov_sufixo"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
         android:text="km/h"
         android:textSize="10sp"
         android:fontFamily="sans-serif"
@@ -72,4 +66,4 @@
         android:textColor="#99FFFFFF"
         android:letterSpacing="0.15"
         android:gravity="center" />
-</LinearLayout>
+</FrameLayout>
