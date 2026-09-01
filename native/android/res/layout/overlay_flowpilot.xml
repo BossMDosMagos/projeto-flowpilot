@@ -3,15 +3,16 @@
   Bolha de velocidade do FlowPilot (R.layout.overlay_flowpilot).
 
   ESTRUTURA (FrameLayout fixo 100dp com fundo circular):
-    - Camada FUNDO (ov_mask): "888" (máscara máxima de 7 segmentos), cor
-      cinza bem translúcida (#1f000000), SEM sombra/brilho — segmentos apagados.
+    - Camada FUNDO (ov_mask): "~~~" (na fonte DSEG14, cada '~' acende os 14
+      segmentos completos), cor preta bem translúcida (#25000000) — a malha
+      completa do display de LCD.
     - Camada FRENTE (ov_vel): valor real da velocidade, sobreposta exatamente
-      em cima da máscara, alinhada À DIREITA para coincidir com as casas do "888"
-      (ex.: 0 km/h => "0" sobre o último "8").
+      em cima da máscara, alinhada À DIREITA para se sobrepor à malha "~~~"
+      (ex.: 0 km/h => "0" sobre a última coluna).
     - Sufixo "km/h": na parte inferior, centralizado.
 
-  Ambas as camadas usam a MESMA fonte, MESMO tamanho e MESMA largura para o
-  alinhamento exato dos dígitos.
+  Ambas as camadas usam a MESMA fonte (DSEG14), MESMO tamanho e MESMA largura
+  para o alinhamento exato dos dígitos.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ov_raiz"
@@ -19,17 +20,17 @@
     android:layout_height="100dp"
     android:background="@drawable/ov_bolha">
 
-    <!-- CAMADA DE FUNDO / INATIVO: "888" fixo, bem translúcido, sem brilho -->
+    <!-- CAMADA DE FUNDO / INATIVO: "~~~" (malha completa), bem translúcido, sem brilho -->
     <TextView
         android:id="@+id/ov_mask"
         android:layout_width="100dp"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:text="888"
+        android:text="~~~"
         android:textSize="36sp"
         android:includeFontPadding="false"
-        android:textColor="#20000000"
-        android:gravity="end"
+        android:textColor="#25000000"
+        android:gravity="end|center_vertical"
         android:shadowColor="@android:color/transparent"
         android:shadowRadius="0" />
 
@@ -43,11 +44,9 @@
         android:textSize="36sp"
         android:includeFontPadding="false"
         android:textColor="#000000"
-        android:gravity="end"
-        android:shadowColor="#66007700"
-        android:shadowRadius="4"
-        android:shadowDx="0"
-        android:shadowDy="0" />
+        android:gravity="end|center_vertical"
+        android:shadowColor="@android:color/transparent"
+        android:shadowRadius="0" />
 
     <!-- SUFIXO: unidade de medida, centralizada na parte inferior -->
     <TextView

@@ -38,8 +38,8 @@ class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var ovVel: TextView? = null      // camada de frente (velocidade real, sobre o "888")
-    private var mask: TextView? = null       // camada de fundo ("888", segmentos apagados)
+    private var ovVel: TextView? = null      // camada de frente (velocidade real, sobre a malha "~~~")
+    private var mask: TextView? = null       // camada de fundo ("~~~", malha completa do display)
     private var sufixo: TextView? = null     // "km/h" abaixo
     private var params: WindowManager.LayoutParams? = null
     @Volatile
@@ -240,12 +240,12 @@ class OverlayService : Service() {
             ra.background?.mutate()?.setTint(fundo)
         }
 
-        // ===== NÚMERO (2 camadas: máscara "888" + valor em cima, alinhado à direita) =====
+        // ===== NÚMERO (2 camadas: malha "~~~" + valor em cima, alinhado à direita) =====
         corAcesa = cor
 
         val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 36f else FlowBridge.overlayFonte(contexto)
 
-        // Frente (valor real): fonte 7-segment idêntica à máscara, cor PRETA (LCD clássico),
+        // Frente (valor real): MESMA fonte DSEG14 da máscara, cor PRETA (LCD clássico),
         // alinhada à direita. Sem glow para não borrar o encaixe dos segmentos.
         ovVel?.apply {
             setTypeface(tf)
@@ -254,13 +254,14 @@ class OverlayService : Service() {
             setShadowLayer(0f, 0f, 0f, 0)
         }
 
-        // Fundo (máscara "888"): MESMA fonte e MESMO tamanho (encaixe exato), cor
-        // translúcida #20000000, SEM sombra — segmentos apagados do cristal.
+        // Fundo (malha "~~~"): MESMA fonte e MESMO tamanho (encaixe exato), cor
+        // preta translúcida #25000000, SEM sombra — malha completa do display.
         mask?.apply {
             setTypeface(tf)
             textSize = tamanhoFonte
-            setTextColor(Color.parseColor("#20000000"))
-            setShadowLayer(0f, 0f, 0f, 0)   // sem brilho/borrão nos segmentos apagados
+            text = "~~~"
+            setTextColor(Color.parseColor("#25000000"))
+            setShadowLayer(0f, 0f, 0f, 0)   // sem brilho/borrão na malha
         }
 
         sufixo?.apply {
@@ -278,9 +279,9 @@ class OverlayService : Service() {
 
     /**
      * Atualiza a camada de frente (ov_vel) com a velocidade REAL, sempre FORMATADA
-     * ALINHADA À DIREITA para coincidir com as casas da máscara "888": um valor de
-     * uma casa (ex.: 0 km/h) aparece sobre o último "8"; duas casas sobre os dois
-     * últimos, e assim por diante. Pra isso o texto é pad (preenchido à esquerda
+     * ALINHADA À DIREITA para se sobrepor à malha "~~~" de fundo: um valor de uma
+     * casa (ex.: 0 km/h) aparece sobre a última coluna; duas casas sobre as duas
+     * últimas, e assim por diante. Pra isso o texto é pad (preenchido à esquerda
      * com espaços) e a view usa gravity=end.
      */
     private fun atualizarValor() {
