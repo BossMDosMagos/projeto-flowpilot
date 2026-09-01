@@ -36,6 +36,11 @@ object FlowBridge {
     private const val KEY_ULT_TS = "ult_ts"
     private const val KEY_VEL = "velocidade_kmh"   // velocidade corrente (atualizada a cada fix)
 
+    // Preferências do painel flutuante (dono: web via AndroidBridge.setOverlayPrefs)
+    private const val KEY_OV_COR = "ov_cor"        // cor da fonte (hex #RRGGBB)
+    private const val KEY_OV_FUNDO = "ov_fundo"    // cor do fundo (hex #AARRGGBB ou #RRGGBB)
+    private const val KEY_OV_TAM = "ov_tam"        // escala do painel (float, 1.0 = padrão)
+
     private var sPrefs: SharedPreferences? = null
 
     fun prefs(ctx: Context): SharedPreferences {
@@ -158,6 +163,31 @@ object FlowBridge {
 
     /** Velocidade corrente em km/h (0 quando parado/sem sinal). */
     fun velocidadeKmh(ctx: Context): Float = prefs(ctx).getFloat(KEY_VEL, 0f)
+
+    // ---- Preferências do painel flutuante (lidas pelo OverlayService) ----
+
+    /** Recebe as preferências do painel vindas do web (AndroidBridge.setOverlayPrefs). */
+    fun setOverlayPrefs(ctx: Context, json: String?) {
+        if (json.isNullOrBlank()) return
+        try {
+            val o = JSONObject(json)
+            val e = prefs(ctx).edit()
+            o.optString("cor", "").takeIf { it.isNotBlank() }.let { if (it != null) e.putString(KEY_OV_COR, it) }
+            o.optString("fundo", "").takeIf { it.isNotBlank() }.let { if (it != null) e.putString(KEY_OV_FUNDO, it) }
+            if (o.has("tamanho")) e.putFloat(KEY_OV_TAM, o.optDouble("tamanho", 1.0).toFloat())
+            e.apply()
+        } catch (t: Throwable) {
+        }
+    }
+
+    /** Cor da fonte do painel (hex). Padrão: verde LED brilhante. */
+    fun overlayCor(ctx: Context): String = prefs(ctx).getString(KEY_OV_COR, "#00FF88") ?: "#00FF88"
+
+    /** Cor do fundo do painel (hex). Padrão: preto translúcido. */
+    fun overlayFundo(ctx: Context): String = prefs(ctx).getString(KEY_OV_FUNDO, "#E6000000") ?: "#E6000000"
+
+    /** Escala do painel (1.0 = padrão). */
+    fun overlayTamanho(ctx: Context): Float = prefs(ctx).getFloat(KEY_OV_TAM, 1f)
 
     fun ultLat(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LAT, 0f).toDouble()
     fun ultLon(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LON, 0f).toDouble()

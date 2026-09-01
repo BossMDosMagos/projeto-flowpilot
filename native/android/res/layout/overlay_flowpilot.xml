@@ -2,19 +2,16 @@
 <!--
   Bolha de velocidade do FlowPilot (R.layout.overlay_flowpilot).
   Bolha circular discreta e 100% arrastável: apenas o número de velocidade
-  (fonte tipo LED verde sobre fundo preto) mais o sufixo "km/h".
+  (fonte DS-DIGIB sobre fundo escuro) mais o sufixo "km/h".
+  O tamanho (diâmetro) e as cores são aplicados dinamicamente pelo OverlayService
+  conforme as preferências do usuário (aplicarPreferencias).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
+    android:id="@+id/ov_raiz"
+    android:layout_width="92dp"
+    android:layout_height="92dp"
     android:orientation="vertical"
     android:gravity="center"
-    android:minWidth="92dp"
-    android:minHeight="92dp"
-    android:paddingLeft="10dp"
-    android:paddingRight="10dp"
-    android:paddingTop="14dp"
-    android:paddingBottom="12dp"
     android:background="@drawable/ov_bolha">
 
     <TextView
@@ -24,7 +21,6 @@
         android:text="0"
         android:textSize="34sp"
         android:textStyle="bold"
-        android:typeface="monospace"
         android:includeFontPadding="false"
         android:textColor="#00FF88"
         android:shadowColor="#1100FF66"
@@ -32,11 +28,11 @@
         android:gravity="center" />
 
     <TextView
+        android:id="@+id/ov_sufixo"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="km/h"
         android:textSize="10sp"
-        android:typeface="monospace"
         android:includeFontPadding="false"
         android:textColor="#99FFFFFF"
         android:letterSpacing="0.15"

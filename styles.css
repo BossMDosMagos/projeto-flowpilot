@@ -502,6 +502,18 @@ select.settings-input {
   cursor: pointer;
 }
 
+/* Seletor de cor do painel flutuante (bolha de velocidade) */
+.settings-input-color {
+  width: 56px;
+  height: 46px;
+  padding: 4px;
+  border: none;
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
 .settings-hint {
   font-size: 12px;
   color: var(--text-secondary);

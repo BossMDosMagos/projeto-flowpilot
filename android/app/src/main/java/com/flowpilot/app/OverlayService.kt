@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -15,9 +17,12 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.res.ResourcesCompat
 
 /**
  * 4. Bolha de velocidade flutuante do FlowPilot.
@@ -25,8 +30,10 @@ import androidx.core.app.NotificationCompat
  * - Roda como FOREGROUND SERVICE: exibe uma notificação discreta e o SO não mata a
  *   bolha de velocidade enquanto o motorista está em outro app (99/Uber/Maps).
  * - Usa TYPE_APPLICATION_OVERLAY no WindowManager para desenhar fora da WebView.
- * - UI mínima: só a bolha circular com o número de velocidade (LED verde) + "km/h".
+ * - UI mínima: só a bolha circular com o número de velocidade (fonte DS-DIGIB) + "km/h".
  * - 100% ARRASTÁVEL: um OnTouchListener na raiz segue o dedo via updateViewLayout.
+ * - Personalizável pelo usuário nas Configurações (cor da fonte, cor do fundo e tamanho),
+ *   persistidas via FlowBridge.overlayCor/overlayFundo/overlayTamanho — aplicadas ao vivo.
  * - Se a permissão "Exibir sobre outros apps" faltar, NÃO morre nem dá crash: apenas
  *   não infla a view e aguarda um novo start (a MainActivity re-inicia ao conceder).
  */
@@ -35,6 +42,7 @@ class OverlayService : Service() {
     private var wm: WindowManager? = null
     private var raiz: View? = null
     private var vel: TextView? = null
+    private var sufixo: TextView? = null
     private var params: WindowManager.LayoutParams? = null
     @Volatile
     private var rodando = false
@@ -43,6 +51,10 @@ class OverlayService : Service() {
         private const val CHANNEL_ID = "flowpilot_overlay"
         private const val NOTIF_ID = 11
 
+        /** Instância corrente do serviço (para a MainActivity aplicar prefs ao vivo). */
+        @Volatile
+        var instancia: OverlayService? = null
+
         private val OVERLAY_TYPE =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
@@ -50,6 +62,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instancia = this
         criarCanal()
         // Foreground imediato (obrigatório em O+ ao usar startForegroundService)
         iniciarForeground()
@@ -125,9 +138,12 @@ class OverlayService : Service() {
         }
 
         vel = raiz?.findViewById(R.id.ov_vel)
+        sufixo = raiz?.findViewById(R.id.ov_sufixo)
 
         // ===== ARRASTAR E SOLTAR =====
         raiz?.setOnTouchListener(ArrastarListener())
+
+        aplicarPreferencias()
 
         runCatching { wm?.addView(raiz, params) }
         if (raiz?.parent == null) {
@@ -135,6 +151,60 @@ class OverlayService : Service() {
             raiz = null
         } else {
             atualizarCadaSegundo()
+        }
+    }
+
+    /** Expõe a reaplicação de preferências ao vivo (chamada pela MainActivity). */
+    fun aplicarPreferenciasPublico() {
+        runOnUiThread { aplicarPreferencias() }
+    }
+
+    /**
+     * Aplica as preferências do painel lidas do FlowBridge (cor da fonte, cor do fundo,
+     * tamanho e fonte DS-DIGIB). Chamada no inflate e sempre que o usuário muda
+     * nas Configurações (via MainActivity.setOverlayPrefs -> instancia.aplicarPreferencias).
+     */
+    private fun aplicarPreferencias() {
+        val ra = raiz ?: return
+        val contexto = this
+
+        // Fonte digital DS-DIGIB (fallback p/ monospace se algo falhar)
+        var tf: Typeface? = null
+        try {
+            tf = ResourcesCompat.getFont(contexto, R.font.ds_digib)
+        } catch (t: Throwable) {
+            tf = null
+        }
+        if (tf == null) tf = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+
+        // cores (com fallback robusto de parse)
+        val cor = try { Color.parseColor(FlowBridge.overlayCor(contexto)) }
+            catch (t: Throwable) { Color.parseColor("#00FF88") }
+        val fundo = try { Color.parseColor(FlowBridge.overlayFundo(contexto)) }
+            catch (t: Throwable) { Color.parseColor("#E6000000") }
+
+        // fundo da bolha
+        ra.background?.mutate()?.setTint(fundo)
+
+        // tamanho (escala aplicada ao círculo e ao número)
+        val escala = FlowBridge.overlayTamanho(contexto).let { if (it <= 0f) 1f else it }
+        val diametro = (92f * escala).toInt()
+        val lp = ra.layoutParams
+        if (lp != null) {
+            lp.width = diametro
+            lp.height = diametro
+            ra.layoutParams = lp
+        }
+
+        vel?.apply {
+            setTypeface(tf)
+            setTextColor(cor)
+            textSize = 34f * escala
+            // glow combinando com a cor
+            setShadowLayer(8f * escala, 0f, 0f, Color.argb(64, Color.red(cor), Color.green(cor), Color.blue(cor)))
+        }
+        sufixo?.apply {
+            textSize = 10f * escala
         }
     }
 
@@ -202,6 +272,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         rodando = false
+        instancia = null
         raiz?.let { runCatching { wm?.removeView(it) } }
         raiz = null
         super.onDestroy()

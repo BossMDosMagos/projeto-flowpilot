@@ -63,7 +63,10 @@ let settings = {
   manterTelaLigada: true,     // Screen Wake Lock
   simulador: true,            // botões de simulação visíveis/ativos
   hud: false,                 // Mini-HUD flutuante (velocidade + manobra + ETA)
-  tripAtiva: 'A'              // Trip exibida no strip (A | B)
+  tripAtiva: 'A',             // Trip exibida no strip (A | B)
+  ovCor: '#00ff88',           // cor da fonte da bolha flutuante
+  ovFundo: '#000000',         // cor do fundo da bolha flutuante
+  ovTamanho: 1.0              // escala do painel flutuante (0.8 | 1.0 | 1.2 | 1.4)
 };
 let tripAKm = 0;              // KM da viagem Trip A
 let tripBKm = 0;              // KM da viagem Trip B
@@ -126,6 +129,9 @@ const hudMiniVel = $('hud-mini-vel');
 const hudMiniManeuver = $('hud-mini-maneuver');
 const hudMiniEta = $('hud-mini-eta');
 const cfgMiniHud = $('cfg-mini-hud');
+const cfgOvCor = $('cfg-ov-cor');
+const cfgOvFundo = $('cfg-ov-fundo');
+const cfgOvTamanho = $('cfg-ov-tamanho');
 const btnEncerrarCorrida = $('btn-encerrar-corrida');
 const cfgStatusNotificacao = $('cfg-status-notificacao');
 
@@ -1773,10 +1779,27 @@ function preencherModalConfig() {
   cfgTelaLigada.checked = !!settings.manterTelaLigada;
   cfgSimulador.checked = !!settings.simulador;
   cfgMiniHud.checked = !!settings.hud;
+  if (cfgOvCor) cfgOvCor.value = (settings.ovCor || '#00ff88').replace('#', '#');
+  if (cfgOvFundo) cfgOvFundo.value = (settings.ovFundo || '#000000').replace('#', '#');
+  if (cfgOvTamanho) cfgOvTamanho.value = String(settings.ovTamanho || 1.0);
   cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
   cfgIntervalo.value = intervaloTrocaOleo || '';
   if (cfgTripAValor) cfgTripAValor.textContent = 'A: ' + fmtKm(tripAKm);
   if (cfgTripBValor) cfgTripBValor.textContent = 'B: ' + fmtKm(tripBKm);
+}
+
+/** Envia as preferências do painel flutuante para o nativo (bolha de velocidade). */
+function sincronizarOverlayPrefs() {
+  const dados = {
+    cor: settings.ovCor || '#00ff88',
+    fundo: settings.ovFundo || '#000000',
+    tamanho: parseFloat(settings.ovTamanho) || 1.0
+  };
+  try {
+    if (window.AndroidBridge && typeof window.AndroidBridge.setOverlayPrefs === 'function') {
+      window.AndroidBridge.setOverlayPrefs(JSON.stringify(dados));
+    }
+  } catch (e) {}
 }
 
 // Abre/fecha o modal de configurações
@@ -1856,6 +1879,18 @@ cfgMiniHud.addEventListener('change', () => {
   settings.hud = cfgMiniHud.checked;
   salvarSettings();
   aplicarSettings();
+});
+
+/* ---- Painel flutuante (bolha de velocidade) ---- */
+const aplicarOverlaySetting = () => {
+  salvarSettings();
+  sincronizarOverlayPrefs();
+};
+if (cfgOvCor) cfgOvCor.addEventListener('change', () => { settings.ovCor = cfgOvCor.value; aplicarOverlaySetting(); });
+if (cfgOvFundo) cfgOvFundo.addEventListener('change', () => { settings.ovFundo = cfgOvFundo.value; aplicarOverlaySetting(); });
+if (cfgOvTamanho) cfgOvTamanho.addEventListener('change', () => {
+  settings.ovTamanho = parseFloat(cfgOvTamanho.value) || 1.0;
+  aplicarOverlaySetting();
 });
 
 /* ---- Manutenção / hodômetro ---- */
@@ -2429,6 +2464,7 @@ setInterval(() => {
   if (bridgeOk) {
     nativoAtivo = true;
     aplicarSafeAreaNativa();
+    sincronizarOverlayPrefs();
     try {
       sincronizarOdometroNativo(true);
       enviarStatusNativo();

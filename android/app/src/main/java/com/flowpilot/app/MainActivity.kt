@@ -227,6 +227,18 @@ class MainActivity : BridgeActivity() {
             FlowBridge.updateStatus(this@MainActivity, json)
         }
 
+        /**
+         * Recebe as preferências do painel flutuante (cor da fonte, cor do fundo e tamanho)
+         * vindas das Configurações e reaplica ao vivo no OverlayService se ele estiver ativo.
+         */
+        @JavascriptInterface
+        fun setOverlayPrefs(json: String) {
+            FlowBridge.setOverlayPrefs(this@MainActivity, json)
+            runOnUiThread {
+                OverlayService.instancia?.aplicarPreferenciasPublico()
+            }
+        }
+
         /** Chamado pelo web ao iniciar/terminar corrida para subir os serviços. */
         @JavascriptInterface
         fun iniciarServicos() {

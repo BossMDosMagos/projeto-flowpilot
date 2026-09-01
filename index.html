@@ -174,6 +174,23 @@
           <p class="settings-hint">Status para a notificação fixa do app nativo:<br><span id="cfg-status-notificacao">—</span></p>
         </section>
 
+        <!-- PAINEL FLUTUANTE (BOLHA DE VELOCIDADE) -->
+        <section class="settings-section">
+          <h4 class="settings-section-title">Painel flutuante (bolha de velocidade)</h4>
+          <p class="settings-hint">Personalize a bolha de km/h que fica por cima dos apps.</p>
+          <label class="settings-field-label" for="cfg-ov-cor">Cor da fonte</label>
+          <input type="color" id="cfg-ov-cor" class="settings-input-color" value="#00ff88">
+          <label class="settings-field-label" for="cfg-ov-fundo">Cor do fundo</label>
+          <input type="color" id="cfg-ov-fundo" class="settings-input-color" value="#000000">
+          <label class="settings-field-label" for="cfg-ov-tamanho">Tamanho do painel</label>
+          <select id="cfg-ov-tamanho" class="settings-input">
+            <option value="0.8">Pequeno</option>
+            <option value="1.0" selected>Normal</option>
+            <option value="1.2">Grande</option>
+            <option value="1.4">Extra grande</option>
+          </select>
+        </section>
+
         <!-- GESTÃO DE DADOS E BACKUP -->
         <section class="settings-section">
           <h4 class="settings-section-title">Dados e backup</h4>
