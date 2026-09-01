@@ -40,6 +40,7 @@ object FlowBridge {
     private const val KEY_OV_COR = "ov_cor"        // cor da fonte (hex #RRGGBB)
     private const val KEY_OV_FUNDO = "ov_fundo"    // cor do fundo (hex #AARRGGBB ou #RRGGBB)
     private const val KEY_OV_TAM = "ov_tam"        // escala do painel (float, 1.0 = padrão)
+    private const val KEY_OV_FONTE = "ov_fonte"    // tamanho da fonte em sp (float)
 
     private var sPrefs: SharedPreferences? = null
 
@@ -175,6 +176,7 @@ object FlowBridge {
             o.optString("cor", "").takeIf { it.isNotBlank() }.let { if (it != null) e.putString(KEY_OV_COR, it) }
             o.optString("fundo", "").takeIf { it.isNotBlank() }.let { if (it != null) e.putString(KEY_OV_FUNDO, it) }
             if (o.has("tamanho")) e.putFloat(KEY_OV_TAM, o.optDouble("tamanho", 1.0).toFloat())
+            if (o.has("fonte")) e.putFloat(KEY_OV_FONTE, o.optDouble("fonte", 34.0).toFloat())
             e.apply()
         } catch (t: Throwable) {
         }
@@ -188,6 +190,9 @@ object FlowBridge {
 
     /** Escala do painel (1.0 = padrão). */
     fun overlayTamanho(ctx: Context): Float = prefs(ctx).getFloat(KEY_OV_TAM, 1f)
+
+    /** Tamanho da fonte do painel em sp (padrão 34). */
+    fun overlayFonte(ctx: Context): Float = prefs(ctx).getFloat(KEY_OV_FONTE, 34f)
 
     fun ultLat(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LAT, 0f).toDouble()
     fun ultLon(ctx: Context): Double = prefs(ctx).getFloat(KEY_ULT_LON, 0f).toDouble()

@@ -13,6 +13,9 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -46,6 +49,8 @@ class OverlayService : Service() {
     private var params: WindowManager.LayoutParams? = null
     @Volatile
     private var rodando = false
+    private var corAcesa = Color.parseColor("#00FF88")
+    private var corFantasma = Color.argb(45, 0, 255, 136)
 
     companion object {
         private const val CHANNEL_ID = "flowpilot_overlay"
@@ -214,21 +219,52 @@ class OverlayService : Service() {
         }
 
         // ===== NÚMERO =====
+        // guarda as cores para o render de 3 dígitos com efeito retrô
+        corAcesa = cor
+        corFantasma = Color.argb(48, Color.red(cor), Color.green(cor), Color.blue(cor))
+
+        val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 34f else FlowBridge.overlayFonte(contexto)
         vel?.apply {
             setTypeface(tf)
-            setTextColor(cor)
-            textSize = 34f * escala
-            // glow combinando com a cor (sombra suave, não estoura o círculo)
-            setShadowLayer(8f * escala, 0f, 0f, Color.argb(70, Color.red(cor), Color.green(cor), Color.blue(cor)))
+            textSize = tamanhoFonte
+            // glow combinando com a cor (aplicado ao texto; o dígito fantasma é quase
+            // invisível por ser bem escuro)
+            setShadowLayer(8f, 0f, 0f, Color.argb(70, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa)))
         }
         sufixo?.apply {
             textSize = 10f * escala
         }
 
+        // Atualiza os dígitos conforme a cor atual
+        atualizarDígitos()
+
         // Redimensiona a janela ao vivo se já estiver na tela
         if (ra.parent != null) {
             runCatching { wm?.updateViewLayout(ra, p) }
         }
+    }
+
+    /**
+     * Renderiza a velocidade em 3 dígitos (000..999) com efeito digital retro:
+     * os dígitos ainda "não preenchidos" (à esquerda do número real) aparecem
+     * desvanecidos, quase invisíveis, como um mostrador de LED de relógio antigo.
+     * Ex.: velocidade 7 → "007" (os dois zeros da esquerda apagados, o 7 aceso).
+     */
+    private fun atualizarDígitos() {
+        val v = vel ?: return
+        val kmh = FlowBridge.velocidadeKmh(this).toInt().coerceIn(0, 999)
+        val texto = kmh.toString().padStart(3, '0')
+        val significativos = kmh.toString().length
+
+        val sb = SpannableStringBuilder()
+        for (i in texto.indices) {
+            // dígitos significativos são os últimos `significativos` caracteres
+            val acesso = i >= 3 - significativos
+            val cor = if (acesso) corAcesa else corFantasma
+            sb.append(texto[i])
+            sb.setSpan(ForegroundColorSpan(cor), i, i + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        v.text = sb
     }
 
     /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
@@ -278,7 +314,7 @@ class OverlayService : Service() {
                     Thread.sleep(1000)
                     runOnUiThread {
                         // velocidade REAL (vinda do ForegroundLocationService via FlowBridge)
-                        vel?.text = "%.0f".format(FlowBridge.velocidadeKmh(this@OverlayService))
+                        atualizarDígitos()
                     }
                 } catch (t: InterruptedException) {
                     break

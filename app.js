@@ -66,7 +66,8 @@ let settings = {
   tripAtiva: 'A',             // Trip exibida no strip (A | B)
   ovCor: '#00ff88',           // cor da fonte da bolha flutuante
   ovFundo: '#000000',         // cor do fundo da bolha flutuante
-  ovTamanho: 1.0              // escala do painel flutuante (0.8 | 1.0 | 1.2 | 1.4)
+  ovTamanho: 1.0,             // escala do painel flutuante (0.8 | 1.0 | 1.2 | 1.4)
+  ovFonte: 34                 // tamanho da fonte da bolha (sp)
 };
 let tripAKm = 0;              // KM da viagem Trip A
 let tripBKm = 0;              // KM da viagem Trip B
@@ -132,6 +133,8 @@ const cfgMiniHud = $('cfg-mini-hud');
 const cfgOvCor = $('cfg-ov-cor');
 const cfgOvFundo = $('cfg-ov-fundo');
 const cfgOvTamanho = $('cfg-ov-tamanho');
+const cfgOvFonte = $('cfg-ov-fonte');
+const cfgOvFonteValor = $('cfg-ov-fonte-valor');
 const btnEncerrarCorrida = $('btn-encerrar-corrida');
 const cfgStatusNotificacao = $('cfg-status-notificacao');
 
@@ -1782,6 +1785,8 @@ function preencherModalConfig() {
   if (cfgOvCor) cfgOvCor.value = (settings.ovCor || '#00ff88').replace('#', '#');
   if (cfgOvFundo) cfgOvFundo.value = (settings.ovFundo || '#000000').replace('#', '#');
   if (cfgOvTamanho) cfgOvTamanho.value = String(settings.ovTamanho || 1.0);
+  if (cfgOvFonte) cfgOvFonte.value = String(settings.ovFonte || 34);
+  if (cfgOvFonteValor) cfgOvFonteValor.textContent = String(settings.ovFonte || 34);
   cfgKmAtual.value = Math.round(kmAtualVeiculo) || '';
   cfgIntervalo.value = intervaloTrocaOleo || '';
   if (cfgTripAValor) cfgTripAValor.textContent = 'A: ' + fmtKm(tripAKm);
@@ -1793,7 +1798,8 @@ function sincronizarOverlayPrefs() {
   const dados = {
     cor: settings.ovCor || '#00ff88',
     fundo: settings.ovFundo || '#000000',
-    tamanho: parseFloat(settings.ovTamanho) || 1.0
+    tamanho: parseFloat(settings.ovTamanho) || 1.0,
+    fonte: parseFloat(settings.ovFonte) || 34
   };
   try {
     if (window.AndroidBridge && typeof window.AndroidBridge.setOverlayPrefs === 'function') {
@@ -1890,6 +1896,13 @@ if (cfgOvCor) cfgOvCor.addEventListener('change', () => { settings.ovCor = cfgOv
 if (cfgOvFundo) cfgOvFundo.addEventListener('change', () => { settings.ovFundo = cfgOvFundo.value; aplicarOverlaySetting(); });
 if (cfgOvTamanho) cfgOvTamanho.addEventListener('change', () => {
   settings.ovTamanho = parseFloat(cfgOvTamanho.value) || 1.0;
+  aplicarOverlaySetting();
+});
+if (cfgOvFonte) cfgOvFonte.addEventListener('input', () => {
+  if (cfgOvFonteValor) cfgOvFonteValor.textContent = cfgOvFonte.value;
+});
+if (cfgOvFonte) cfgOvFonte.addEventListener('change', () => {
+  settings.ovFonte = parseFloat(cfgOvFonte.value) || 34;
   aplicarOverlaySetting();
 });
 
