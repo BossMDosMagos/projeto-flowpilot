@@ -3,11 +3,15 @@
   Bolha de velocidade do FlowPilot (R.layout.overlay_flowpilot).
   Bolha circular discreta e 100% arrastável.
 
-  Mostrador: 3 CÉLULAS DE DÍGITO FIXAS (como segmentos de um LCD de relógio).
-  Cada dígito ocupa sua própria matriz de largura constante e gravity=center,
-  então o painel NÃO se move nem "puxa" os números — a velocidade simplesmente
-  vai se formando dentro de cada célula, como num display digital real.
-  O diámetro do círculo é definido no WindowManager.LayoutParams pelo
+  MOSTRADOR LCD REAL (2 camadas sobrepostas em FrameLayout):
+    a) CAMADA DE FUNDO (ov_mask): exibe "888" (máscara máxima) na mesma fonte
+       7-segmentos, cor cinza-claro translúcida (#33888888), SEM sombra/borrão —
+       são os segmentos "apagados" do cristal LCD.
+    b) CAMADA DE FRENTE (ov_valor): exibe a velocidade em tempo real, na cor
+       verde LED, alinhada À DIREITA sobre a máscara (define a largura fixa das
+       "888", então as matrizes nunca se movem).
+  "km/h" fica centralizado abaixo, em fonte sans-serif limpa.
+  O diâmetro do círculo é definido no WindowManager.LayoutParams pelo
   OverlayService (aplicarPreferencias); aqui a raiz apenas preenche (match_parent).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -18,58 +22,53 @@
     android:gravity="center"
     android:background="@drawable/ov_bolha">
 
-    <!-- Fileira dos 3 dígitos (células fixas, não se mexem) -->
-    <LinearLayout
+    <!-- Camadas sobrepostas dos dígitos -->
+    <FrameLayout
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center">
+        android:layout_height="wrap_content">
 
+        <!-- CAMADA DE FUNDO: máscara "888" (segmentos apagados, sem brilho) -->
         <TextView
-            android:id="@+id/ov_d0"
-            android:layout_width="30dp"
+            android:id="@+id/ov_mask"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="888"
+            android:textSize="34sp"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:typeface="monospace"
+            android:textColor="#33888888"
+            android:letterSpacing="0.02"
+            android:gravity="center"
+            android:shadowColor="@android:color/transparent" />
+
+        <!-- CAMADA DE FRENTE: valor real, alinhado À DIREITA sobre a máscara -->
+        <TextView
+            android:id="@+id/ov_valor"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:text="0"
             android:textSize="34sp"
             android:textStyle="bold"
             android:includeFontPadding="false"
             android:typeface="monospace"
             android:textColor="#00FF88"
-            android:gravity="center" />
+            android:gravity="end|center_vertical"
+            android:shadowColor="#66007700"
+            android:shadowRadius="4"
+            android:shadowDx="0"
+            android:shadowDy="0" />
+    </FrameLayout>
 
-        <TextView
-            android:id="@+id/ov_d1"
-            android:layout_width="30dp"
-            android:layout_height="wrap_content"
-            android:text="0"
-            android:textSize="34sp"
-            android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:typeface="monospace"
-            android:textColor="#00FF88"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/ov_d2"
-            android:layout_width="30dp"
-            android:layout_height="wrap_content"
-            android:text="0"
-            android:textSize="34sp"
-            android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:typeface="monospace"
-            android:textColor="#00FF88"
-            android:gravity="center" />
-    </LinearLayout>
-
+    <!-- Unidade de medida: sans-serif limpa e pequena, centralizada -->
     <TextView
         android:id="@+id/ov_sufixo"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="km/h"
         android:textSize="10sp"
+        android:fontFamily="sans-serif"
         android:includeFontPadding="false"
-        android:typeface="monospace"
         android:textColor="#99FFFFFF"
         android:letterSpacing="0.15"
         android:gravity="center" />

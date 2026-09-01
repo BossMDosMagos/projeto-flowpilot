@@ -17,9 +17,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.res.ResourcesCompat
@@ -41,13 +39,13 @@ class OverlayService : Service() {
 
     private var wm: WindowManager? = null
     private var raiz: View? = null
-    private var digitos = arrayOfNulls<TextView>(3)   // as 3 células fixas do LCD (ov_d0..ov_d2)
-    private var sufixo: TextView? = null
+    private var valor: TextView? = null      // camada de frente (velocidade real, verde LED)
+    private var mask: TextView? = null       // camada de fundo ("888", segmentos apagados)
+    private var sufixo: TextView? = null     // "km/h" abaixo
     private var params: WindowManager.LayoutParams? = null
     @Volatile
     private var rodando = false
     private var corAcesa = Color.parseColor("#00FF88")
-    private var corFantasma = Color.argb(22, 0, 255, 136)
 
     companion object {
         private const val CHANNEL_ID = "flowpilot_overlay"
@@ -145,9 +143,8 @@ class OverlayService : Service() {
             y = 200
         }
 
-        digitos[0] = raiz?.findViewById(R.id.ov_d0)
-        digitos[1] = raiz?.findViewById(R.id.ov_d1)
-        digitos[2] = raiz?.findViewById(R.id.ov_d2)
+        valor = raiz?.findViewById(R.id.ov_valor)
+        mask = raiz?.findViewById(R.id.ov_mask)
         sufixo = raiz?.findViewById(R.id.ov_sufixo)
 
         // ===== ARRASTAR E SOLTAR =====
@@ -217,25 +214,34 @@ class OverlayService : Service() {
             ra.background?.mutate()?.setTint(fundo)
         }
 
-        // ===== NÚMERO (3 células fixas de dígito) =====
-        // guarda as cores para o render com efeito retrô (fantasma bem fraquinho)
+        // ===== NÚMERO (2 camadas: máscara "888" + valor em cima, alinhado à direita) =====
         corAcesa = cor
-        corFantasma = Color.argb(22, Color.red(cor), Color.green(cor), Color.blue(cor))
 
         val tamanhoFonte = if (FlowBridge.overlayFonte(contexto) <= 0f) 34f else FlowBridge.overlayFonte(contexto)
-        val glow = Color.argb(70, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa))
-        for (i in 0..2) {
-            val d = digitos[i] ?: continue
-            d.setTypeface(tf)
-            d.textSize = tamanhoFonte
-            d.setShadowLayer(8f, 0f, 0f, glow)
+
+        // Frente (valor real): fonte 7-segment, cor verde LED, glow sutil (não borra
+        // porque só existe na camada ativa — a máscara "888" não tem sombra).
+        val glow = Color.argb(100, Color.red(corAcesa), Color.green(corAcesa), Color.blue(corAcesa))
+        valor?.apply {
+            setTypeface(tf)
+            textSize = tamanhoFonte
+            setTextColor(corAcesa)
+            setShadowLayer(4f, 0f, 0f, glow)
         }
+
+        // Fundo (máscara "888"): mesma fonte/tamanho (para alinhar exato) mas SEM sombra.
+        mask?.apply {
+            setTypeface(tf)
+            textSize = tamanhoFonte
+            setShadowLayer(0f, 0f, 0f, 0)   // sem brilho/borrão nos segmentos apagados
+        }
+
         sufixo?.apply {
             textSize = 10f * escala
         }
 
-        // Atualiza os dígitos conforme a cor atual
-        atualizarDígitos()
+        // Atualiza o valor conforme a cor atual
+        atualizarValor()
 
         // Redimensiona a janela ao vivo se já estiver na tela
         if (ra.parent != null) {
@@ -244,24 +250,13 @@ class OverlayService : Service() {
     }
 
     /**
-     * Renderiza a velocidade dentro das 3 CÉLULAS FIXAS do mostrador (efeito LCD real):
-     * cada dígito preenche a sua própria matriz (que nunca se move). Os dígitos ainda
-     * "não preenchidos" (à esquerda do número real) aparecem como uma sombrinha bem
-     * fraquinha — o cristal apagado que ainda se vislumbra num display de LCD.
-     * Ex.: velocidade 7 → digitos "007": células 0 e 1 com fantasma, célula 2 com o 7 aceso.
+     * Atualiza a camada de frente com a velocidade real. A máscara "888" já fica fixa
+     * atrás (segmentos apagados). O valor é exibido por cima; os dígitos não
+     * preenchidos à esquerda deixam ver a máscara — efeito LCD real e estável.
      */
-    private fun atualizarDígitos() {
+    private fun atualizarValor() {
         val kmh = FlowBridge.velocidadeKmh(this).toInt().coerceIn(0, 999)
-        val texto = kmh.toString().padStart(3, '0')
-        val significativos = kmh.toString().length
-
-        for (i in 0..2) {
-            val d = digitos[i] ?: continue
-            // dígitos significativos são os últimos `significativos` (à direita)
-            val acesso = i >= 3 - significativos
-            d.setTextColor(if (acesso) corAcesa else corFantasma)
-            d.text = texto[i].toString()
-        }
+        valor?.text = kmh.toString()
     }
 
     /** Faz a bolha seguir o dedo na tela em tempo real (drag-and-drop). */
@@ -311,7 +306,7 @@ class OverlayService : Service() {
                     Thread.sleep(1000)
                     runOnUiThread {
                         // velocidade REAL (vinda do ForegroundLocationService via FlowBridge)
-                        atualizarDígitos()
+                        atualizarValor()
                     }
                 } catch (t: InterruptedException) {
                     break
